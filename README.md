@@ -1,5 +1,5 @@
 # True-Sentinel
-
+Open this file in Raw on Github to read proper format. 
 MINIMAL COMPONENTS
 ADALM-PLUTO Rev.C (Z7010-AD9361 fw v0.38)   ✓ confirmed working
 Bosean FS-5000                                ✓ confirmed working
