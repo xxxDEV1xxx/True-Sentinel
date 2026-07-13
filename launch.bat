@@ -44,6 +44,8 @@ echo   [16] Open sweep.html    http://localhost:8000/sweep.html
 echo   [17] Open gnss_map.html http://localhost:8001/gnss_map.html
 echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
 echo.
+echo   [19] geiger_sdr_correlator.py  Post-session Geiger/SDR correlation
+echo.
 echo   PRESETS
 echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
 echo   [B]  CORE + SWEEP       Infrastructure + 386MHz sweep
@@ -239,6 +241,19 @@ echo        --ground-truth LAT,LON  static receiver position
 echo        --out DIR          log directory
 echo        Default: latest gnss log in %BASE%
 echo        Example: 18,--ground-truth 33.800509,-117.220352
+echo.
+echo   [19] geiger_sdr_correlator.py  Post-session Geiger/SDR correlation
+echo        --sdr-log FILE [FILE]     sweep_*.jsonl.gz file(s)
+echo        --serial-log FILE [FILE]  serial_*.jsonl.gz file(s)
+echo        --audio-log FILE [FILE]   audio_*.jsonl.gz file(s)
+echo        --all-sessions            process all matched sessions
+echo        --baseline-dr USVH        known baseline dose rate
+echo        --window SEC              analysis window seconds (default 30)
+echo        --lag-max SEC             max correlation lag (default 0.5)
+echo        --out DIR                 log directory
+echo        Default: latest session pair in %BASE%
+echo        Example: 19,--baseline-dr 0.02
+echo        Example: 19,--all-sessions --baseline-dr 0.02
 echo.
 echo  ----------------------------------------------------------------
 echo   COMMON EXAMPLES
