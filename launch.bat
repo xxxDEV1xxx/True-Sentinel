@@ -13,7 +13,7 @@ cls
 echo.
 echo  ================================================================
 echo   CTW SENTINEL FORENSIC PLATFORM -- LAUNCH MENU
-echo   Advanced CTW Research  ^|  USPTO 19/466,387
+echo   Advanced CT Research  
 echo  ================================================================
 echo.
 echo   INFRASTRUCTURE
