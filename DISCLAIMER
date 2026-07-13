@@ -1,0 +1,15 @@
+Purpose and Legal & Ethical BoundariesTrue-Sentinel is a passive forensic RF instrumentation platform developed for the detection and documentation of electromagnetic anomalies in residential and personal environments. It is not a surveillance device, communications interceptor, or targeting system.Explicit LimitationsThe platform is strictly passive and does not:Decode, demodulate, or interpret higher-layer protocol data
+Intercept, record, or analyze the content of private communications
+Perform active direction-finding or tracking against specific individuals
+Target or surveil persons
+Transmit any signals or interfere with licensed spectrum
+
+Any use of this system for such prohibited purposes is unauthorized, contrary to the developer’s intent, and may violate applicable federal and state laws (including but not limited to the Electronic Communications Privacy Act and Communications Act of 1934).Intended FunctionThe system is engineered to:Perform wideband spectrum analysis using Software-Defined Radio (ADALM-PLUTO) to detect anomalous signal activity, including unauthorized or misconfigured transmitters operating in licensed bands.
+Correlate RF anomalies with broadband electromagnetic induction events captured via a Geiger-Müller tube (Bosean FS-5000), functioning as a secondary vacuum-envelope sensor aperture.
+Execute real-time temporal correlation between independent sensor streams using a shared nanosecond-precision ClockAnchor to identify coincident events with forensic integrity.
+Conduct mmWave radar mapping and presence detection (HLK-LD6002B) with user-performed empty-room and human-reference calibration for basic through-wall anomaly localization.
+Monitor GNSS signal integrity for evidence of spoofing or jamming.
+Generate timestamped, cryptographically neutral logs (compressed JSONL) suitable for technical review, regulatory complaints (FCC), or civil documentation.
+
+The combination of sensors and correlation engine is specifically tuned to surface persistent, structured anomalies — such as rogue cell-site simulators, directed energy-like perturbations, body-coupling effects at specific frequencies (e.g., 386 MHz), and other environmental signatures that deviate significantly from expected background radiation.Design PhilosophyThis platform was built to address the growing asymmetry between the ease of deploying covert electromagnetic systems and the difficulty of independently detecting and documenting them. By making the instrumentation open and transparent, the goal is to empower individuals to create verifiable evidence of potential violations of electromagnetic privacy and spectrum integrity within their own immediate surroundings.Users are expected to operate the system responsibly, lawfully, and only on property they control or have explicit permission to monitor. All collected data should be handled in compliance with applicable privacy and wiretap statutes.
+
