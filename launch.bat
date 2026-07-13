@@ -231,6 +231,7 @@ echo        No arguments.
 echo.
 echo   [17] Opens http://localhost:8001/gnss_map.html in browser.
 echo        No arguments.
+echo.
 echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
 echo        --log PATH         specific gnss_*.jsonl.gz to analyze
 echo        --all-logs         process all logs in output directory
