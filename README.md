@@ -166,8 +166,7 @@ echo     9 10 11 17,
 echo.
 echo  ================================================================
 pause
-goto menu
-
+goto menu 
 
 use launch.bat in cmd. 
 Menu with help options appears.
