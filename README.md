@@ -1,5 +1,13 @@
 # True-Sentinel
 
+MINIMAL COMPONENTS
+ADALM-PLUTO Rev.C (Z7010-AD9361 fw v0.38)   ✓ confirmed working
+Bosean FS-5000                                ✓ confirmed working
+u-blox 7 GNSS (COM7)                         ✓ confirmed working
+Windows PC                            ✓ confirmed working
+Python 3.14                                  ✓ confirmed working
+timeapi.io 
+
 :: ══════════════════════════════════════════════════════════════════════════════
 :: FULL REFERENCE
 :: ══════════════════════════════════════════════════════════════════════════════
