@@ -42,6 +42,7 @@ echo.
 echo   DASHBOARDS
 echo   [16] Open sweep.html    http://localhost:8000/sweep.html
 echo   [17] Open gnss_map.html http://localhost:8001/gnss_map.html
+echo   help                    Display command options
 echo.
 echo   PRESETS
 echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
@@ -53,6 +54,7 @@ echo   [F]  RF FULL            All RF scanners
 echo   [G]  mmWave ONLY        60GHz sensor passive scan (no calibration)
 echo   [S]  STOP ALL           Kill all CTW processes
 echo   [Q]  QUIT               Exit
+echo   [H]  HELP               Display command options
 echo.
 echo  ================================================================
 echo   ARGUMENT PASSTHROUGH:
