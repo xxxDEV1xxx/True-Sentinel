@@ -499,6 +499,37 @@ echo         --dwell-ms 30 --anomaly-db 10 --out C:\sdr\logs
 echo.
 echo  Chain verification (standalone):
 echo    python css_hunter.py --verify-chain --out C:\sdr\logs
+echo    Full session with ADB-forwarded NetHunter:
+echo      7,--bands 2 4 5 12 13 66 71 --at-port localhost:5555
+echo         --dwell-ms 30 --anomaly-db 10 --out C:\sdr\logs
+echo.
+echo  Chain verification (standalone):
+echo    python css_hunter.py --verify-chain --out C:\sdr\logs
+echo.
+echo  ADB BRIDGE SETUP (Mode 2 -- PC + phone simultaneously):
+echo  ----------------------------------------------------------------
+echo    Step 1. Connect SM-G930U via USB, enable ADB in NetHunter
+echo    Step 2. In NetHunter Kali terminal or adb shell:
+echo              socat TCP-LISTEN:5555,reuseaddr,fork
+echo                    FILE:/dev/ttyUSB2,raw,echo=0,b115200
+echo            If socat not installed:
+echo              while true; do nc -l -p 5555 ^< /dev/smd7 ^> /dev/smd7; done
+echo    Step 3. On PC (separate cmd window):
+echo              adb forward tcp:5555 tcp:5555
+echo    Step 4. Launch entry 7 with at-port:
+echo              7,--at-port localhost:5555
+echo              7,--at-port localhost:5555 --bands 2 4 5 12 13 66 71
+echo    Step 5. Optionally run rogue_tower_hunter on phone simultaneously:
+echo              adb shell /data/local/tmp/rogue_tower_hunter
+echo            Pull evidence after session:
+echo              adb pull /sdcard/tower_evidence/ C:\sdr\logs\tower_evidence\
+echo            Verify chain on PC:
+echo              python css_hunter.py --verify-chain
+echo                     --out C:\sdr\logs\tower_evidence
+echo.
+echo  NOTE: /dev/ttyUSB2 is the Qualcomm AT port on SM-G930U (herolte).
+echo        If unavailable try /dev/smd7 or /dev/smd11.
+echo        Check: adb shell ls /dev/tty* /dev/smd*
 pause & goto menu
 
 :show_help_8
