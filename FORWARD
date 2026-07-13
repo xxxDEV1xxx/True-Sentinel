@@ -1,0 +1,384 @@
+================================================================================
+  CTW SENTINEL — FORENSIC RF INSTRUMENTATION PLATFORM
+  FORWARD
+  Advanced CT Research | Christopher T. Williams
+  California | 2026
+================================================================================
+
+
+  ON THE INVISIBLE ARCHITECTURE OF MODERN SURVEILLANCE
+  A Forward to the CTW SENTINEL Technical Documentation
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+
+  We live inside a radio frequency environment of extraordinary complexity.
+  Every moment of every day, electromagnetic signals propagate through the
+  walls of our homes, through our bodies, through the air we breathe. Most
+  of these signals are legitimate — the infrastructure of modern
+  communication, navigation, and commerce. We have accepted their presence
+  as the cost of connectivity, as the invisible tax of the networked world.
+
+  But not all signals are legitimate. Not all transmitters are licensed.
+  Not all surveillance is disclosed. Not all intrusion announces itself.
+
+  This platform was built because of that distinction.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  THE RIGHT TO ELECTROMAGNETIC PRIVACY
+  ─────────────────────────────────────────────────────────────────────────────
+
+  The Fourth Amendment protects against unreasonable search and seizure.
+  Courts have extended this protection to digital communications, to cell
+  phone location data, to the contents of our electronic correspondence.
+  But a gap exists — a gap that widens with every advance in radio
+  frequency technology — between the legal framework that protects our
+  privacy and the electromagnetic reality in which we actually live.
+
+  A cell site simulator does not knock on your door. It does not present
+  a warrant. It does not announce its presence on any public registry. It
+  transmits on licensed frequencies without authorization, forces your
+  phone to connect to it, intercepts your device identifiers, and
+  potentially captures your communications — all while you remain entirely
+  unaware that anything has occurred. The device is illegal under 47 U.S.C.
+  § 333 and 18 U.S.C. § 2512. Its use without a warrant is illegal under
+  the Fourth Amendment. Its existence in proximity to your home or person
+  is a violation of rights that most people do not yet know they possess.
+
+  A 60 GHz directed energy beam does not require physical contact to affect
+  the human body. It deposits energy into skin and subcutaneous tissue at
+  a depth of less than one millimeter. It can induce thermal effects,
+  interfere with electronic implants, cause disorientation, and be used for
+  sensing and surveillance through walls and clothing. The equipment that
+  generates it is sold as unlicensed under FCC Part 15.255 — meaning no
+  license is required, no registration is filed, no oversight exists. The
+  FCC's decision to make this band unlicensed, combined with the industry's
+  decision to price the detection equipment at thousands of dollars, creates
+  a situation in which the weapon and the ability to document exposure to
+  it exist in fundamentally different economic strata. This is not
+  accidental.
+
+  GPS spoofing does not require proximity. A coherent spoofing transmitter
+  can redirect the navigation solution of every GNSS receiver within its
+  range, substituting false position, false velocity, and false time. The
+  affected devices have no way to know they have been redirected. The
+  affected persons have no way to know their location data, their financial
+  transactions that depend on GPS timing, or their communications that rely
+  on synchronized clocks, have been compromised. The infrastructure attack
+  surface is enormous. The individual's ability to detect and document it
+  has historically been nonexistent.
+
+  Rogue WiFi access points do not advertise their true purpose. They
+  broadcast familiar network names, exploit the automatic connection
+  behavior that every mobile device exhibits, and silently position
+  themselves between a user and the legitimate internet. The traffic that
+  flows through them — messages, credentials, financial data, medical
+  information — belongs to the user. The user never consented to its
+  interception.
+
+  The common thread in all of these threats is invisibility. They operate
+  in a frequency domain that human senses cannot perceive. They leave no
+  physical trace. They generate no receipt. The person whose privacy has
+  been violated, whose location has been falsified, whose communications
+  have been intercepted, has no means of knowing that any of it occurred —
+  unless they have the instruments to see what the human eye cannot.
+
+  The right to live freely cannot be separated from the right to know what
+  is happening to you in the electromagnetic environment you inhabit. These
+  are not technical concerns reserved for engineers and researchers. They
+  are civil rights concerns that belong to everyone.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  THE ASYMMETRY OF INFORMATION
+  ─────────────────────────────────────────────────────────────────────────────
+
+  The history of civil rights is partly a history of information asymmetry
+  being corrected. The person being surveilled did not know they were being
+  surveilled. The person whose communications were intercepted did not know
+  their communications were intercepted. The person whose location was
+  tracked did not know their location was tracked. Legal frameworks evolved
+  to address these asymmetries — to require disclosure, to mandate warrants,
+  to create accountability — precisely because the asymmetry itself was
+  recognized as a form of power that required constraint.
+
+  The electromagnetic environment has created a new and largely unaddressed
+  asymmetry. The infrastructure to surveil, to intercept, to locate, to
+  expose, has become progressively cheaper and more accessible. The
+  infrastructure to detect, to document, to prove, has remained expensive,
+  technically demanding, and largely confined to institutions — government
+  agencies, corporate security teams, academic laboratories — that already
+  possess the resources to acquire it.
+
+  A Stingray cell site simulator costs tens of thousands of dollars to
+  deploy. The equipment to detect one costs tens of thousands of dollars
+  to acquire. This symmetry is not coincidental. When only those with
+  sufficient resources can detect the surveillance that only those with
+  sufficient resources can deploy, the result is a class of activity that
+  is effectively self-concealing by economic design.
+
+  Software-defined radio changed this. The PlutoSDR that anchors this
+  platform costs less than two hundred dollars. The principles of RF
+  forensics that required laboratory infrastructure a decade ago now
+  fit in a backpack. The frequency bands that were once accessible only
+  to institutions with six-figure spectrum analyzers are now accessible
+  to anyone with a laptop and a USB port. This democratization of RF
+  visibility is not merely a technical convenience. It is a civil rights
+  development of genuine significance.
+
+  CTW SENTINEL was built in that context. It exists because the tools to
+  see the invisible exist, because the legal framework that should protect
+  people from invisible intrusion exists but is not enforced without
+  evidence, and because evidence requires instrumentation.
+
+  You cannot file a complaint with the FCC about interference you cannot
+  document. You cannot pursue a civil rights violation you cannot prove.
+  You cannot assert that your GPS was spoofed without data that shows the
+  spoofing. You cannot demonstrate that a cell site simulator was operating
+  in your neighborhood without the signal records that show its presence.
+  Documentation is not optional. It is the prerequisite to every other
+  remedy.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  WHAT SIX YEARS OF MONITORING REVEALED
+  ─────────────────────────────────────────────────────────────────────────────
+
+  The technical documentation in this package describes the CTW SENTINEL
+  platform in the abstract — its architecture, its sensors, its detection
+  algorithms, its evidence chain. What it does not fully convey is that
+  this platform was built in response to documented, persistent, and
+  systematic anomalies observed at a single residential location in California,
+  California over a period of more than six years.
+
+  The record includes:
+
+  A confirmed persistent signal at 386.00 MHz in the NTIA federal land
+  mobile band, showing body-coupling behavior — signal amplitude increasing
+  in correlation with physical proximity to the analyzer — documented across
+  multiple instrument platforms and multiple sessions.
+
+  A ghost cellular base station broadcasting TAC 65535, the 3GPP reserved
+  all-bits-set value that no legitimate carrier uses, on EARFCN 66586, a
+  frequency above the legal ceiling of Band 66. This ghost cell appeared
+  alongside legitimate carriers and was documented across three separate
+  mobile devices on three separate carrier accounts simultaneously.
+
+  Approximately four hundred rogue WiFi access points in the immediate
+  vicinity, with rotating BSSIDs and confirmed DHCP hijacking behavior,
+  documented during a live session that captured the rogue DHCP response
+  in real time.
+
+  GNSS constellation collapse to a single satellite — PRN 9 — with
+  maintained strong signal, consistent with a broadband L1 jamming
+  architecture combined with a coherent PRN 9 spoofing transmitter. The
+  surviving satellite maintaining signal strength while all others drop is
+  the signature of coordinated jam-plus-spoof, not natural interference.
+
+  A 293-times-baseline Geiger anomaly event on the FS-5000 platform,
+  followed by an 8.41 microsievert per hour spike, documented on May 8,
+  2026. Baseline at the deployment site is 0.01 to 0.03 microsieverts per
+  hour. A 293-times event is not explained by natural background variation.
+
+  A confirmed Physical Cell Identity 242 appearing simultaneously on Band
+  66 EARFCN 66586 and Band 2 EARFCN 1000, a configuration that requires
+  a single physical transmitter serving both bands — an impossibility for
+  legitimate infrastructure and a documented signature of a software-defined
+  cellular impersonation platform.
+
+  The Zadoff-Chu root sequence u=34, the PSS pilot sequence corresponding
+  to PCI group N_ID2=2 and consistent with PCI 242, detectable in the RF
+  environment during anomalous activity periods.
+
+  An Intel Bluetooth firmware loader on a RHEL 9 workstation executing OTP
+  fuse reads and loading firmware with BD_ADDR spoofing strings, on a
+  machine whose syspurpose value was set to Disaster Recovery — a Red Hat
+  enumeration that requires deliberate administrative selection and is
+  entirely inappropriate for a personal workstation.
+
+  A live keystroke injection event, documented in kernel logs, on a machine
+  that had no keyboard attached at the time.
+
+  Each of these anomalies, taken alone, might be explainable. Taken
+  together, documented across six years, across multiple instrument
+  platforms, across multiple devices, across multiple wireless standards,
+  they constitute a pattern. That pattern is the reason this platform
+  exists. That pattern is the reason the platform is as comprehensive as
+  it is. And that pattern is the reason this documentation is written for
+  an audience beyond the technical — for anyone who has experienced
+  anomalies they could not explain, who has noticed that their devices
+  behave differently in certain locations, who has felt that something
+  was happening in their electromagnetic environment that they had no
+  tools to see.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ON THE DECISION TO MAKE THIS OPEN
+  ─────────────────────────────────────────────────────────────────────────────
+
+  The tools in this package are not secret. The methods are not classified.
+  The detection principles are grounded in publicly available standards,
+  open-source software, and commercially available hardware. Every design
+  decision in this platform can be independently verified, replicated, and
+  improved upon.
+
+  This was a deliberate choice.
+
+  Surveillance infrastructure derives much of its power from the asymmetry
+  between the capability to surveil and the capability to detect. Closing
+  that gap requires that detection tools be available to the people who
+  need them, not only to institutions that fund their development. A
+  platform that is documented thoroughly enough for a non-engineer to
+  operate is a platform that actually addresses the asymmetry rather than
+  simply relocating it.
+
+  It was also a choice grounded in the nature of forensic evidence. Evidence
+  that was collected using proprietary, undisclosed methods is more
+  vulnerable to challenge than evidence collected using methods that can be
+  independently verified. The open documentation of this platform is not
+  a security risk. It is a legal protection. When the methods are
+  transparent, the evidence is stronger.
+
+  And it was a choice grounded in the belief that the right to understand
+  your electromagnetic environment is not a right that should require a
+  security clearance, an engineering degree, or institutional affiliation
+  to exercise. The frequencies are shared. The spectrum belongs to the
+  public. The tools to see what is happening in it should be available to
+  the public as well.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  A NOTE ON RESPONSIBLE USE
+  ─────────────────────────────────────────────────────────────────────────────
+
+  The same instruments that detect a rogue cell site simulator can, in
+  principle, be used to locate and characterize legitimate cellular
+  infrastructure. The same GNSS forensic tools that document spoofing
+  can produce detailed records of position over time. The same RF
+  logging capabilities that capture evidence of unlicensed transmission
+  capture the full electromagnetic environment including transmissions
+  that are entirely lawful.
+
+  This platform is built for forensic documentation of RF anomalies and
+  potential civil rights violations. It is not built for interference with
+  licensed transmitters, for interception of communications content, for
+  direction-finding against individuals, or for any purpose that would
+  itself constitute the kind of violation it is designed to detect.
+
+  The legal framework that makes cell site simulators illegal is the same
+  legal framework that protects legitimate communications from interference.
+  The right to see your electromagnetic environment does not include the
+  right to disrupt someone else's. This platform detects and documents.
+  It does not transmit, interfere, or intercept content.
+
+  Use it to see. Use what you see to seek remedy through the legal channels
+  that exist for that purpose. The FCC complaint process, the civil rights
+  framework, the courts — these are the appropriate venues for the evidence
+  this platform produces. They require documentation. This platform
+  provides it.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  TO THOSE WHO WILL USE THIS
+  ─────────────────────────────────────────────────────────────────────────────
+
+  If you are reading this because you have noticed something wrong in your
+  environment — a device that behaves strangely, a connection that drops
+  in patterns, a phone that loses GPS lock in the same location repeatedly,
+  a neighbor situation that feels coordinated in ways you cannot explain —
+  this platform was built for you.
+
+  The technical sections that follow are written to be accessible regardless
+  of your engineering background. Section 3 will get you running with a
+  single sensor in minutes. Section 4 will tell you exactly what each
+  piece of hardware does and what it can detect. Section 6 will walk you
+  through first operation step by step. You do not need to understand
+  Zadoff-Chu sequences or FMCW radar to run this platform and produce
+  evidence of what is happening in your environment.
+
+  If you are reading this as a researcher, a security professional, an
+  attorney building a case, or an engineer who wants to understand or
+  extend the platform — the full technical documentation, the patent
+  applications, the filed complaints, and the six-year dataset behind
+  this work are available as part of the CTW-11 forensic record.
+
+  If you are reading this as a policymaker or regulator — the gap between
+  the legal framework that prohibits cell site simulators and the practical
+  enforcement of that prohibition is measurable in the number of active
+  IMSI catchers operating without legal authorization in residential
+  neighborhoods at this moment. The gap between the FCC's decision to make
+  60 GHz unlicensed and the practical ability of a private citizen to
+  document exposure to devices operating in that band is measurable in
+  the price of a waveguide power meter. These are policy choices with
+  civil rights consequences. They are addressable.
+
+  If you are reading this as someone who deploys the equipment this platform
+  is designed to detect — know that the asymmetry is closing. The tools
+  that made your operations invisible are no longer beyond the reach of
+  the people you operate against. The spectrum is shared. The evidence
+  accumulates. The legal framework, however slowly, responds to evidence.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+  THE FREQUENCY OF FREEDOM
+  ─────────────────────────────────────────────────────────────────────────────
+
+  There is a question that sits underneath all of the technical content in
+  this documentation. It is not a question about antenna design or EARFCN
+  allocation or PSS Zadoff-Chu sequences. It is a question about what kind
+  of world we are building and what rights people have within it.
+
+  We are building a world in which the electromagnetic environment is as
+  consequential to daily life as the physical environment. The signals that
+  move through the walls of your home affect your privacy, your security,
+  your health, your finances, your location data, and the integrity of
+  the devices you depend on. The decisions about who can transmit in that
+  environment, at what power, on what frequencies, with what oversight,
+  are decisions about power — about who gets to shape the invisible
+  architecture that everyone inhabits.
+
+  The right to breathe clean air was not always recognized as a right.
+  The right to clean water was not always recognized as a right. The
+  recognition of these rights required first that people understood they
+  were being harmed, then that they had the means to document the harm,
+  then that the documentation was sufficient to compel legal remedy.
+
+  The right to inhabit a clean electromagnetic environment — free from
+  unlicensed surveillance, free from forced device compromise, free from
+  the broadcast of injurious signals into your body and your home without
+  your knowledge or consent — is not yet recognized in those terms. But
+  the harm is real. The technology to document it now exists. The legal
+  framework, imperfect and incomplete as it is, provides mechanisms for
+  remedy when evidence is presented.
+
+  CTW SENTINEL is an instrument for seeing what would otherwise be
+  invisible. What you do with what you see is yours to decide. But you
+  cannot decide what you cannot see. And the first step toward any remedy
+  is always documentation.
+
+  See clearly. Document completely. Seek remedy through every channel
+  available.
+
+  The frequencies belong to everyone.
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Christopher T. Williams
+  Inventor | Researcher | CTW-11 Project 
+  California
+  2026
+  advancedctresearch.com
+  USPTO 19/466,387 | FCC Complaint #8740730 | NRC #1456745
+  DOJ Civil Rights Complaint | Cal OES #26-1153
+
+  "The right to see your electromagnetic environment
+   is inseparable from the right to live freely within it."
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+================================================================================
+  END OF FORWARD
+  Proceed to instructions.txt for installation and operation.
+================================================================================
