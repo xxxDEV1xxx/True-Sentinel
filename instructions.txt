@@ -1,0 +1,1156 @@
+================================================================================
+  CTW SENTINEL — FORENSIC RF INSTRUMENTATION PLATFORM
+  Instructions and Setup Guide
+  Advanced CTW Research | USPTO 19/466,387
+  FCC Complaint #8740730 | NRC #1456745
+================================================================================
+
+  CONTENTS
+  ────────────────────────────────────────────────────────────────────────────
+  1.  What this platform is
+  2.  Minimum requirements (any single sensor)
+  3.  Quick start — one command
+  4.  Hardware configurations (Tier 1 through Tier 5)
+  5.  Software installation
+  6.  First run — every configuration
+  7.  The launch menu — how to use it
+  8.  Argument passthrough syntax
+  9.  Calibration procedures (60GHz sensor)
+  10. Advanced multi-sensor operation
+  11. ADB phone integration (NetHunter + compass)
+  12. Dual PlutoSDR setup
+  13. Evidence chain and forensic logging
+  14. GNSS anomaly detection and geometric analysis
+  15. Dashboard reference
+  16. Troubleshooting
+  17. File reference
+  18. Legal and evidentiary notes
+
+
+================================================================================
+  1. WHAT THIS PLATFORM IS
+================================================================================
+
+  CTW SENTINEL is a multi-aperture RF forensic instrumentation platform.
+  It simultaneously operates multiple sensor types, timestamps every event
+  on a shared nanosecond-precision clock, and produces chain-linked
+  forensic evidence logs suitable for regulatory filings and legal
+  proceedings.
+
+  Sensor apertures:
+    SDR (PlutoSDR)     — RF energy, PSS correlation, band anomaly detection
+    Geiger/GM tube     — broadband EM aperture via GM tube induction
+    60GHz radar        — directed energy presence and triangulation
+    GNSS               — position, spoofing detection, pseudorange analysis
+    Compass            — bearing (via Galaxy S7 AK09916 magnetometer)
+    Modem AT           — live cellular serving cell and neighbour data
+
+  All apertures write to the same log directory and share the same
+  ClockAnchor wall_ns epoch, making cross-aperture temporal correlation
+  possible to nanosecond precision.
+
+  You do NOT need all sensors. The platform is modular. Start with
+  whatever hardware you have and add sensors as you acquire them.
+
+
+================================================================================
+  2. MINIMUM REQUIREMENTS
+================================================================================
+
+  ABSOLUTE MINIMUM — ONE SENSOR:
+  ───────────────────────────────
+  Any one of the following is sufficient to run the platform:
+
+    Option A:  Windows PC + PlutoSDR only
+               Runs RF sweep on 386 MHz or any band
+               No phone, no GNSS, no Geiger required
+
+    Option B:  Windows PC + Geiger (FS-5000) only
+               Runs GM tube pulse correlation
+               No PlutoSDR required
+
+    Option C:  Windows PC + HLK-LD6002B only
+               Runs 60GHz passive scan
+               No PlutoSDR required
+
+    Option D:  Windows PC + u-blox GNSS only
+               Runs GNSS forensic map and anomaly detection
+               No PlutoSDR required
+
+    Option E:  Windows PC + Android phone (ADB) only
+               Runs cellular rogue tower hunter via AT commands
+               No PlutoSDR required
+
+    Option F:  Existing gnss_*.jsonl.gz log files only
+               Runs GNSS geometric anomaly analysis offline
+               No hardware connected — analyze previous sessions
+
+  SOFTWARE MINIMUM (all configurations):
+    Windows 10 or 11 (64-bit)
+    Python 3.11 or higher
+    pip packages (see Section 5)
+
+  HARDWARE MINIMUM PER SENSOR:
+    PlutoSDR:    USB cable + two antennas (included with device)
+    FS-5000:     Micro-USB cable + 3.5mm audio cable + USB audio adapter
+    HLK-LD6002B: USB-C cable (Test Kit version — no other parts needed)
+    u-blox NEO-7M: USB cable
+    Phone:       USB cable + ADB drivers
+
+
+================================================================================
+  3. QUICK START — ONE COMMAND
+================================================================================
+
+  Step 1: Install Python from python.org (check "Add to PATH")
+
+  Step 2: Open Command Prompt and run:
+    pip install pyserial pyaudio numpy watchdog pylibiio
+
+  Step 3: Install libiio from Analog Devices:
+    https://github.com/analogdevicesinc/libiio/releases
+    Download and run the Windows .exe installer.
+
+  Step 4: Install CH340 USB driver (for FS-5000, LD6002B, u-blox):
+    https://www.wch-ic.com/downloads/CH341SER_EXE.html
+
+  Step 5: Place all .py files in C:\sdr\logs\
+
+  Step 6: Double-click launch.bat
+    Menu appears. Type the number(s) for what you want to run.
+
+  If you have ONLY a PlutoSDR, type:
+    1 2 3 5, 16,
+
+  If you have ONLY an FS-5000 Geiger:
+    1 4,
+
+  If you have ONLY the HLK-LD6002B on COM5:
+    12,--port COM5
+
+  If you have ONLY u-blox GNSS:
+    9 10 11 17,
+
+  If you have GNSS logs and want the anomaly report:
+    18,--ground-truth LAT,LON
+
+  That is the entire process for a single-sensor deployment.
+
+
+================================================================================
+  4. HARDWARE CONFIGURATIONS
+================================================================================
+
+  ── TIER 1 — PC ONLY (no sensors) ──────────────────────────────────────────
+
+  What you can run:    Dashboard in DEMO mode (synthetic data)
+                       GNSS anomaly report on existing log files
+  Launch menu:         16,
+                       18,--all-logs (if logs exist)
+
+  This verifies the software is installed correctly.
+  The dashboard opens at http://localhost:8000/sweep.html
+  Click SOURCE then DEMO then CONNECT to see synthetic sweep data.
+
+
+  ── TIER 2 — PC + PlutoSDR ──────────────────────────────────────────────────
+
+  Hardware needed:
+    ADALM-PLUTO (any revision)
+    USB cable
+    Two antennas (included)
+
+  First time setup:
+    1. Plug PlutoSDR into PC via USB
+    2. Wait for Windows to install RNDIS driver (30-60 seconds)
+    3. Open Device Manager — verify "PlutoSDR USB Ethernet/RNDIS Gadget"
+       appears under Network Adapters
+    4. Set static IP on that adapter: 192.168.2.10 / 255.255.255.0
+    5. Ping test: ping 192.168.2.1
+       Should reply. If not, check driver installation.
+    6. IIO test: iio_info -u ip:192.168.2.1
+       Should show ad9361-phy device.
+
+  Launch (386 MHz forensic target):
+    1 2 3 5, 16,
+
+  Launch (custom frequency):
+    1 2 3 5,--start 385900000 --stop 386100000 --step 10000 --no-iq 16,
+
+  Launch (full band sweep):
+    1 2 3 5,--start 70000000 --stop 6000000000 --step 1000000 --no-iq 16,
+
+
+  ── TIER 2B — PC + FS-5000 Geiger ───────────────────────────────────────────
+
+  Hardware needed:
+    Bosean FS-5000 Geiger counter
+    Micro-USB cable (FS-5000 to PC)
+    3.5mm TRS audio cable (FS-5000 headphone to USB audio adapter)
+    USB audio adapter
+
+  First time setup:
+    1. Plug FS-5000 into PC via Micro-USB
+       Device Manager shows CH340 COM port (e.g. COM3)
+    2. Plug 3.5mm audio cable from FS-5000 headphone jack to
+       USB audio adapter, plug adapter into PC
+    3. Check Device Manager for USB Audio Device
+
+  The FS-5000 serves two roles:
+    Serial stream: dose rate (DR), CPM, CPS data
+    Audio stream:  individual pulse detection via headphone jack
+
+  The GM tube also functions as a broadband EM aperture responding
+  to RF/EM induction, not just ionizing radiation.
+
+  Launch:
+    1 4,
+
+  With PlutoSDR for correlation:
+    1 2 3 4 5, 16,
+
+
+  ── TIER 2C — PC + HLK-LD6002B 60GHz Sensor ────────────────────────────────
+
+  Hardware needed:
+    HLK-LD6002B Test Kit (includes USB-C carrier board)
+    USB-C cable
+
+  First time setup:
+    1. Plug LD6002B Test Kit into PC via USB-C
+       Device Manager shows CH340 COM port (e.g. COM5)
+    2. Find your COM port:
+       In launch menu type: 12,--list-ports
+    3. Note the COM number
+
+  The LD6002B detects 57-64 GHz FMCW signals — presence, motion,
+  X/Y/Z coordinates, velocity, and motion intensity. No WiFi, no
+  Bluetooth. UART only. Zero wireless attack surface.
+
+  Launch (passive scan, no calibration needed):
+    12,--port COM5
+
+  Launch (full forensic scan after calibration):
+    15,--port COM5 --room-x 400 --room-y 400 --room-z 250
+
+
+  ── TIER 2D — PC + u-blox NEO-7M GNSS ──────────────────────────────────────
+
+  Hardware needed:
+    u-blox NEO-7M USB GNSS receiver
+    Active GPS antenna with SMA connector (recommended)
+    USB cable
+
+  First time setup:
+    1. Connect active antenna to NEO-7M SMA port
+    2. Plug NEO-7M into PC via USB
+       Device Manager shows CH340 COM port (e.g. COM7)
+    3. Edit ublox_data.py — change COM_PORT at top of file
+
+  Place antenna near a window or outside for best fix acquisition.
+  First fix acquisition indoors can take 2-5 minutes.
+
+  Launch (live capture + map):
+    9 10 11 17,
+
+  Launch (anomaly report on existing logs):
+    18,--ground-truth LAT,LON
+
+
+  ── TIER 3 — PC + PlutoSDR + FS-5000 (dual aperture) ───────────────────────
+
+  Core forensic configuration. The PlutoSDR captures RF energy while
+  the FS-5000 GM tube captures broadband EM pulses. The correlator
+  engine cross-references both streams and emits CORR / EM_ONLY /
+  RF_ONLY events on a shared nanosecond epoch.
+
+  Hardware:
+    PlutoSDR + two antennas
+    FS-5000 + USB cable + audio cable + USB audio adapter
+
+  Launch:
+    1 2 3 4 5, 16,
+
+  When a CORR event fires you will see in the correlator window:
+    [HH:MM:SS.mmm] *** CORR ***  DR=0.42uSv/h  RF=386.010MHz
+                                  CF=118.3  dt=+47ms
+
+  The dt value is the signed time offset between the Geiger pulse
+  and the RF anomaly. Positive means RF came first. This ordering
+  is forensically significant.
+
+
+  ── TIER 4 — PC + PlutoSDR + FS-5000 + GNSS ────────────────────────────────
+
+  Adds GPS position logging and spoofing detection to Tier 3.
+  Every RF anomaly and Geiger correlation event now has an associated
+  GPS coordinate on the same timestamp epoch.
+
+  Hardware:
+    Everything in Tier 3
+    u-blox NEO-7M + active antenna
+
+  Launch:
+    1 2 3 4 5 9 10 11, 16 17,
+
+  After session, run geometric anomaly analysis:
+    18,--ground-truth LAT,LON --all-logs
+
+
+  ── TIER 5 — FULL PLATFORM (all sensors) ────────────────────────────────────
+
+  All sensors simultaneously. Two PlutoSDR units for simultaneous
+  386 MHz sweep and cellular band scanning without LO contention.
+  Phone provides modem AT data, compass bearing, and runs the
+  rogue_tower_hunter C daemon simultaneously.
+
+  Hardware:
+    2x PlutoSDR
+    FS-5000 + audio adapter
+    HLK-LD6002B Test Kit
+    u-blox NEO-7M + active antenna
+    Galaxy S7 (SM-G930U) running NetHunter + ADB
+    Powered USB hub (7-port minimum)
+
+  Launch:
+    A    (preset: full platform)
+
+  Or manually:
+    1 2 3 4 5,--uri ip:192.168.2.1 6,--uri ip:192.168.3.1
+    7,--uri ip:192.168.3.1 --at-port localhost:5555
+    9 10,--compass-port localhost:5556 11 12,--port COM5 16 17,
+
+  After session:
+    18,--ground-truth LAT,LON --all-logs
+
+
+================================================================================
+  5. SOFTWARE INSTALLATION
+================================================================================
+
+  STEP 1 — Python
+  ────────────────
+  Download Python 3.11 or higher from https://python.org
+  During install: CHECK "Add Python to PATH"
+  Verify: open Command Prompt and type: python --version
+
+  STEP 2 — libiio (required for PlutoSDR)
+  ─────────────────────────────────────────
+  Download from:
+    https://github.com/analogdevicesinc/libiio/releases
+  Download and run: libiio-X.X-setup.exe (Windows)
+  This installs:
+    iio_info.exe       (test PlutoSDR connection)
+    iio_attr.exe       (set PlutoSDR parameters)
+    iio_readdev.exe    (read IQ samples)
+
+  STEP 3 — Python packages
+  ─────────────────────────
+  Open Command Prompt and run exactly:
+
+    pip install pyserial pyaudio numpy watchdog pylibiio
+
+  Then if using RTL-SDR LNB downconverter (optional):
+    pip install pyrtlsdr
+
+  STEP 4 — CH340 USB serial driver
+  ──────────────────────────────────
+  Required for: FS-5000, HLK-LD6002B Test Kit, u-blox NEO-7M
+  Download: https://www.wch-ic.com/downloads/CH341SER_EXE.html
+  Run installer. Reboot if prompted.
+
+  STEP 5 — ADB (only needed for phone integration)
+  ─────────────────────────────────────────────────
+  Download Android Platform Tools from:
+    https://developer.android.com/tools/releases/platform-tools
+  Extract to C:\adb\
+  Add C:\adb\ to your Windows PATH environment variable.
+  Verify: adb version
+
+  STEP 6 — Place script files
+  ────────────────────────────
+  Copy all .py files and launch.bat into: C:\sdr\logs\
+
+  Required files:
+    launch.bat                — launch menu (this is what you run)
+    stop.bat                  — kills all CTW processes (auto-generated)
+    ntp_web.py                — web-based time sync
+    gz_watch.py               — gzip mirror watcher
+    live_reader.py            — JSONL cursor HTTP server
+    rf_server.py              — SSE broadcast server
+    correlator.py             — RF/Geiger correlation engine
+    pluto_sweep.py            — PlutoSDR sweep logger
+    bt_scanner.py             — Bluetooth/BLE scanner
+    css_hunter.py             — CSS active band scanner
+    css_idle_hunter.py        — CSS idle/gap scanner
+    ublox_data.py             — u-blox raw capture
+    ublox_parser.py           — UBX binary parser + compass injection
+    gnss_server.py            — GNSS map server
+    gnss_anomaly_report.py    — GNSS forensic anomaly + geometry analysis
+    hlk_ld6002b.py            — 60GHz sensor driver
+    mmwave_sensor.py          — pluggable mmWave framework
+    compass_bridge.py         — runs on phone, streams heading via TCP
+    sweep.html                — RF forensic dashboard
+    gnss_map.html             — GNSS forensic map
+
+
+================================================================================
+  6. FIRST RUN — EVERY CONFIGURATION
+================================================================================
+
+  1. Open Command Prompt in C:\sdr\logs\
+     Right-click the folder and select Open in Terminal, or:
+       cd C:\sdr\logs
+
+  2. Run: launch.bat
+
+  3. If this is your first run, type:
+       16,
+     This opens the dashboard in DEMO mode to verify software works.
+     Click SOURCE then DEMO then CONNECT.
+     You should see the spectrum panel fill with data.
+
+  4. Close the browser, return to the menu window.
+     Press M to go back to the menu.
+
+  5. Now run your actual sensor configuration per Section 4.
+
+  The runtime\ directory is created automatically.
+  Log files are written to C:\sdr\logs\ with STAMP suffixes.
+  Each session generates its own timestamped log set.
+
+
+================================================================================
+  7. THE LAUNCH MENU — HOW TO USE IT
+================================================================================
+
+  When launch.bat runs you see a numbered menu of 18 entries.
+  Type numbers and press Enter to launch those components.
+
+  BASIC SELECTION:
+  ─────────────────
+  Type one or more numbers separated by spaces:
+
+    1 2 3           launches entries 1, 2, and 3
+    5               launches only entry 5
+    1 2 3 5 16      launches infrastructure + sweep + browser
+
+  PRESETS:
+  ─────────
+  Single letter presets launch common configurations:
+
+    A    Full platform (all entries)
+    B    Core infrastructure + 386MHz sweep + browser
+    C    Core infrastructure + CSS hunters + browser
+    D    Core infrastructure + Bluetooth + browser
+    E    GNSS stack only (entries 9 10 11 17)
+    F    All RF scanners
+    G    60GHz sensor passive scan only
+
+  HELP:
+  ──────
+  Type H or HELP to see all arguments for every entry.
+  Type ?N (e.g. ?5) to see help for a specific entry.
+  Type ?18 to see GNSS anomaly report help.
+
+  AFTER LAUNCH:
+  ──────────────
+  After processes start you see a summary screen.
+  Options: M (back to menu), S (stop all), Q (quit)
+
+  STOP ALL PROCESSES:
+  ────────────────────
+  Type S at any menu or summary prompt.
+  Or double-click stop.bat in C:\sdr\logs\
+
+
+================================================================================
+  8. ARGUMENT PASSTHROUGH SYNTAX
+================================================================================
+
+  Every menu entry accepts custom arguments using the comma separator.
+  The comma closes an entry's argument list.
+
+  SYNTAX:
+    N,--arg value --arg2 value2
+
+  COMMA RULES:
+    Comma after a number means that entry's args follow until next number
+    No comma means entry uses its built-in default args
+    Trailing comma explicitly closes the entry (optional but clear)
+
+  EXAMPLES:
+
+    Single entry with args:
+      5,--start 385900000 --stop 386100000 --step 10000
+
+    Multiple entries, mix of defaults and custom args:
+      1 2 3 4 5,--no-iq 16,
+
+    60GHz passive scan on COM5:
+      12,--port COM5
+
+    60GHz forensic scan with room geometry:
+      15,--port COM5 --room-x 365 --room-y 420 --room-z 265
+
+    GNSS anomaly report with ground truth:
+      18,--ground-truth 33.800509,-117.220352
+
+    GNSS report on all logs in directory:
+      18,--all-logs --ground-truth 33.800509,-117.220352
+
+    Full session with GNSS report after:
+      1 2 3 4 5 9 10 11 16 17,
+      (then after session ends, run separately:)
+      18,--ground-truth LAT,LON --all-logs
+
+  FIND YOUR COM PORT:
+    Before running sensors type: 12,--list-ports
+    Or open Device Manager then Ports (COM and LPT)
+
+
+================================================================================
+  9. CALIBRATION PROCEDURES — 60GHz SENSOR (LD6002B)
+================================================================================
+
+  Calibration is OPTIONAL. Without calibration the sensor still
+  detects presence, motion, distance, and velocity. Calibration
+  enables null-space subtraction and directional triangulation.
+
+  WHY CALIBRATE:
+    Uncalibrated: detects any presence (human OR external source)
+    Calibrated:   subtracts empty-room baseline, distinguishes
+                  human body signature from external 60GHz emitter
+
+  PHASE 1 — EMPTY ROOM BASELINE (entry 13)
+  ──────────────────────────────────────────
+  Procedure:
+    1. Remove all people from the room
+    2. Turn off fans, AC units, anything that moves
+    3. Measure your room in centimeters:
+       Width east-west = room-x
+       Depth north-south = room-y
+       Ceiling height = room-z
+       Module X position from SW corner = mount-x
+       Module Y position from SW corner = mount-y
+    4. Launch entry 13 with your room dimensions:
+         13,--port COM5 --room-x 400 --room-y 380 --room-z 260
+            --mount-x 200 --mount-y 190
+    5. Leave the room. Wait 5 minutes minimum.
+    6. Return and press Ctrl+C in the CTW-mmwave-cal window.
+    7. Calibration saves to: C:\sdr\logs\runtime\ld6002b_cal.json
+
+  PHASE 2 — HUMAN REFERENCE (entry 14)
+  ──────────────────────────────────────
+  Must run AFTER Phase 1. Same day, same room configuration.
+
+  Procedure:
+    1. Launch entry 14 with same room dimensions:
+         14,--port COM5 --room-x 400 --room-y 380 --room-z 260
+    2. Walk to the NORTH wall. Stand 1 meter from wall. Wait 30 seconds.
+    3. Walk to the EAST wall. Stand 1 meter from wall. Wait 30 seconds.
+    4. Walk to the SOUTH wall. Stand 1 meter from wall. Wait 30 seconds.
+    5. Walk to the WEST wall. Stand 1 meter from wall. Wait 30 seconds.
+    6. Press Ctrl+C in the window. Human reference saves automatically.
+
+  PHASE 3 — FORENSIC SCAN (entry 15)
+  ────────────────────────────────────
+  Launch:
+    15,--port COM5 --room-x 400 --room-y 380 --room-z 260
+
+  Anomaly classes:
+    STATIC_EMITTER      velocity ~0, fixed XY  =  CW or pulsed beam
+    SLOW_MODULATED      vel 5-30 cm/s          =  FMCW or AM beam
+    FAST_MODULATED      vel >30 cm/s           =  hopping emitter
+    TRIANGULATION       source estimated from 2+ wall detections
+
+  Without calibration run entry 12 for passive detection.
+  Any presence event with no person physically present is anomalous
+  regardless of calibration.
+
+
+================================================================================
+  10. ADVANCED MULTI-SENSOR OPERATION
+================================================================================
+
+  TIMESTAMP ALIGNMENT:
+  ─────────────────────
+  All sensors share the same ClockAnchor epoch established at session
+  start, calibrated against timeapi.io (accurate to approximately 10ms).
+  All wall_ns timestamps across all sensors are directly comparable.
+
+  A CORR event in the correlator can be matched to the exact NAV-PVT
+  GPS fix and LD6002B presence reading at the same nanosecond,
+  enabling multi-aperture forensic correlation.
+
+  SENSOR START ORDER:
+  ────────────────────
+  The recommended order (matching launch menu numbers):
+
+    1. gz_watch.py       — must start before any sweep logger
+    2. live_reader.py    — must start before rf_server.py
+    3. rf_server.py      — must start before opening browser
+    4. correlator.py     — after rf_server
+    5. pluto_sweep.py    — after gz_watch
+    6. ublox_data.py     — starts GNSS capture
+    7. ublox_parser.py   — starts 5 seconds after ublox_data
+    8. gnss_server.py    — after ublox_parser
+    9. hlk_ld6002b.py    — independent, any order
+
+  The launch menu handles this order automatically for presets.
+
+  LOG DIRECTORY STRUCTURE:
+  ─────────────────────────
+  C:\sdr\logs\
+    sweep_STAMP.jsonl.gz          PlutoSDR sweep records
+    bt_STAMP.jsonl.gz             BT/BLE scanner
+    css_STAMP.jsonl.gz            CSS hunter
+    css_evidence_STAMP.log        SHA-256 chain evidence
+    css_chain_STAMP.log           Chain verification hashes
+    css_idle_STAMP.jsonl.gz       CSS idle gap scanner
+    gnss_STAMP.jsonl.gz           GNSS parser output
+    gnss_anomaly_report_STAMP.txt GNSS geometric anomaly report
+    gnss_anomaly_report_STAMP.json GNSS report (machine-readable)
+    hlk6002b_STAMP.jsonl.gz       60GHz sensor
+    session_STAMP.json            Session metadata
+    runtime\
+      sweep_live.jsonl            Live mirror of current sweep
+      gnss_live.jsonl             Live mirror of GNSS fixes
+      css_live.jsonl              Live mirror of CSS detections
+      mmwave_live.jsonl           Live mirror of 60GHz events
+      corr_live.jsonl             Live mirror of correlations
+      ld6002b_cal.json            60GHz calibration (persists)
+      process_logs\               Per-process console output
+
+
+================================================================================
+  11. ADB PHONE INTEGRATION
+================================================================================
+
+  The Galaxy S7 (SM-G930U) running Kali NetHunter provides:
+    Modem AT data    — live serving cell, neighbours, cipher mode
+    Compass bearing  — AK09916 3-axis magnetometer heading
+    Rogue hunter     — rogue_tower_hunter C daemon (independent)
+
+  All three functions access different subsystems and run without
+  conflict simultaneously.
+
+  SETUP — MODEM AT BRIDGE (port 5555):
+  ──────────────────────────────────────
+  1. Connect phone to PC via USB
+  2. In NetHunter Kali terminal:
+       socat TCP-LISTEN:5555,reuseaddr,fork \
+             FILE:/dev/ttyUSB2,raw,echo=0,b115200
+     Alternative if socat unavailable:
+       while true; do nc -l -p 5555 < /dev/smd7 > /dev/smd7; done
+  3. On PC (separate cmd window):
+       adb forward tcp:5555 tcp:5555
+  4. Launch css_hunter with at-port:
+       7,--at-port localhost:5555
+
+  SETUP — COMPASS BRIDGE (port 5556):
+  ─────────────────────────────────────
+  1. In NetHunter Kali terminal (separate window):
+       python /sdcard/compass_bridge.py
+  2. On PC:
+       adb forward tcp:5556 tcp:5556
+  3. Launch ublox_parser with compass-port:
+       10,--compass-port localhost:5556
+
+  When compass is active, every NAV-PVT GPS fix record includes:
+    compass_heading_deg  — true north bearing (with 11.5 deg E declination)
+    compass_x_gauss      — raw X magnetometer
+    compass_y_gauss      — raw Y magnetometer
+  These fields appear as directional arrows on gnss_map.html fix markers.
+
+  SETUP — ROGUE TOWER HUNTER (phone daemon):
+  ───────────────────────────────────────────
+  1. Push binary: adb push rogue_tower_hunter /data/local/tmp/
+  2. Run: adb shell chmod +x /data/local/tmp/rogue_tower_hunter
+  3. Execute: adb shell /data/local/tmp/rogue_tower_hunter
+  4. Pull evidence after session:
+       adb pull /sdcard/tower_evidence/ C:\sdr\logs\tower_evidence\
+  5. Verify chain:
+       python css_hunter.py --verify-chain
+              --out C:\sdr\logs\tower_evidence
+
+  NOTE: /dev/ttyUSB2 is the Qualcomm AT port on SM-G930U (herolte).
+        If unavailable try /dev/smd7 or /dev/smd11.
+        Check: adb shell ls /dev/tty* /dev/smd*
+
+
+================================================================================
+  12. DUAL PlutoSDR SETUP
+================================================================================
+
+  Two PlutoSDR units allow simultaneous:
+    Unit 1 (ip:192.168.2.1) — 386MHz forensic sweep
+    Unit 2 (ip:192.168.3.1) — BT/CSS scanning
+
+  ONE-TIME SETUP FOR SECOND PlutoSDR:
+  ─────────────────────────────────────
+  1. Plug ONLY the second unit into PC
+  2. Open the USB mass storage drive that appears
+  3. Open config.txt and change:
+       [NETWORK]
+       hostname = pluto2
+       ipaddr = 192.168.3.1
+       ipaddr_host = 192.168.3.10
+       netmask = 255.255.255.0
+  4. Save, then RIGHT-CLICK drive in Explorer and select Eject
+     (do NOT unplug the cable — eject only)
+  5. Wait 5 seconds for LED to stabilise
+
+  CHANGE MAC ADDRESS (prevents Windows driver conflict):
+  ───────────────────────────────────────────────────────
+  While only second unit is connected:
+    ssh root@192.168.3.1    (password: analog)
+    fw_setenv ethaddr 00:05:F7:00:00:02
+    fw_setenv usbethaddr 00:05:F7:00:00:02
+    reboot
+
+  VERIFY:
+    ping 192.168.2.1
+    ping 192.168.3.1
+    iio_info -u ip:192.168.2.1
+    iio_info -u ip:192.168.3.1
+
+  DUAL LAUNCH:
+    1 2 3 4 5,--uri ip:192.168.2.1
+    6,--uri ip:192.168.3.1
+    7,--uri ip:192.168.3.1 --bands 2 4 5 12 13 66 71 16,
+
+
+================================================================================
+  13. EVIDENCE CHAIN AND FORENSIC LOGGING
+================================================================================
+
+  All forensic log files are written with ClockAnchor nanosecond
+  timestamps calibrated against timeapi.io at session start.
+  The NTP offset is recorded in every session header.
+
+  CSS HUNTER — SHA-256 CHAIN EVIDENCE:
+  ──────────────────────────────────────
+  Every ROGUE or SUSPECT cellular event is written to a chain-linked
+  evidence log. Each record is SHA-256 hashed against the previous
+  record's hash, creating a tamper-evident chain.
+
+  Files produced per session:
+    css_evidence_STAMP.log    pipe-delimited chain log
+    css_chain_STAMP.log       sequence and hash pairs
+
+  Verify a session:
+    python css_hunter.py --verify-chain --out C:\sdr\logs
+    Output: CHAIN INTACT or CHAIN BROKEN at seq=N
+
+  VERDICT THRESHOLDS (from rogue_tower_hunter.c scoring engine):
+    score >= 60  =  ROGUE    written to evidence chain
+    score >= 30  =  SUSPECT  written to evidence chain
+    score  < 30  =  CLEAN    logged only
+
+  LOG FORMAT:
+  ────────────
+  All logs are newline-delimited JSON (.jsonl) compressed with gzip.
+  To read a log file:
+    python -c "import gzip,json;
+    [print(json.dumps(json.loads(l),indent=2))
+    for l in gzip.open('sweep_STAMP.jsonl.gz')]" | more
+
+  CORR EVENTS (from correlator.py):
+  ───────────────────────────────────
+    CORR       both apertures triggered within window
+    EM_ONLY    GM tube pulsed, no RF anomaly
+    RF_ONLY    RF anomaly, no GM tube pulse
+
+  Key CORR record fields:
+    wall_ns        nanosecond timestamp on shared epoch
+    dr             dose rate at event time (uSv/h)
+    rf_freq_hz     frequency of RF anomaly
+    rf_cf          crest factor (impulsive signal indicator)
+    rf_dt_ms       signed time offset RF minus Geiger in ms
+
+
+================================================================================
+  14. GNSS ANOMALY DETECTION AND GEOMETRIC ANALYSIS
+================================================================================
+
+  Entry 18 — gnss_anomaly_report.py — runs offline against recorded
+  gnss_*.jsonl.gz log files and produces both a human-readable text
+  report and a machine-readable JSON report.
+
+  WHAT IT DETECTS:
+  ─────────────────
+
+    Detection 1 — Constellation collapse
+      Satellite count at or below threshold in an epoch.
+      Healthy GNSS requires minimum 4 satellites.
+
+    Detection 2 — Single satellite survival
+      Exactly one satellite surviving at healthy C/N0 while
+      others are visible but unusable. This discriminates spoofing
+      from broadband jamming. A jammer suppresses ALL signals
+      including the survivor. A coherent spoofer broadcasts a
+      synthetic signal for one PRN loud enough to maintain lock
+      while real signals on all other PRNs are overwhelmed.
+      This was the confirmed signature in the documented sessions
+      (PRN 9 surviving at 30-34 dB-Hz while full constellation dropped).
+
+    Detection 3 — C/N0 anomalies
+      Signals weaker than 25 dB-Hz (noise floor elevated by jamming)
+      or stronger than 50 dB-Hz (local re-broadcaster or spoofed
+      signal at elevated power).
+
+    Detection 4 — Hardware spoof flag
+      u-blox NAV-STATUS spoofDetState field reporting value 2 or 3.
+      This is the receiver's own onboard spoofing detection.
+      States: 0=unknown, 1=clean, 2=spoofing indicated, 3=multiple.
+
+    Detection 5 — Jamming indicator
+      MON-HW jamInd field. Scale 0=nominal to 255=severe.
+      Threshold: above 100 is flagged.
+
+    Detection 6 — Pseudorange plausibility
+      RXM-RAW pseudorange values outside the plausible GPS orbit
+      range of 19,000 to 30,000 km. Implausible pseudoranges
+      indicate the receiver is processing signals that do not
+      correspond to actual satellite distances.
+
+    Detection 7 — Clock bias/drift anomaly
+      NAV-CLOCK receiver clock bias exceeding 100 microseconds.
+      Large clock bias can indicate injection of false timing signals.
+
+    Detection 8 — Fix type degradation
+      Transitions from 3D fix to 2D or no-fix.
+
+    Detection 9 — Position accuracy degradation
+      Horizontal accuracy worse than 50m or vertical worse than 75m.
+
+    Detection 10 — IMPOSSIBLE SATELLITE GEOMETRY
+    ──────────────────────────────────────────────
+    This is the geometric cross-check that determines whether the
+    satellite positions the receiver reports are consistent with
+    the receiver's actual physical location.
+
+    Three sub-detections:
+
+    10A — BEARING PAIR TRIANGULATION
+      For every pair of satellites in view, the platform computes
+      where the receiver would need to physically be for BOTH
+      satellites to appear at their reported azimuth and elevation
+      simultaneously. If this computed position diverges from the
+      known static location by more than 500 meters, the satellite
+      geometry is inconsistent with the receiver's actual position.
+      If it diverges by more than 100 kilometers, the geometry is
+      geometrically impossible for a stationary receiver.
+
+    10B — SUB-SATELLITE POINT DISCONTINUITY
+      For each satellite, the platform computes where that satellite
+      is projected above Earth's surface based on reported azimuth
+      and elevation. GPS satellites orbit at approximately 26,560 km
+      and move at approximately 3.9 km/s. If the sub-satellite point
+      jumps faster than orbital mechanics allow between consecutive
+      readings, the azimuth/elevation values changed discontinuously,
+      consistent with a spoofer reassigning which synthetic satellite
+      is being broadcast.
+
+    10C — REPORTED FIX VERSUS GROUND TRUTH
+      When a static ground truth position is provided, every reported
+      position fix is compared against it. Fixes displaced from the
+      known location produce a displacement vector: how far off, and
+      in what direction. This is the spoofing displacement — the
+      position the attacker's synthetic signals cause the receiver
+      to compute. The bearing from ground truth to the false position
+      provides directional evidence.
+
+    CONSENSUS BEARING:
+      All geometric errors across 10A, 10B, and 10C are combined
+      using circular mean statistics to produce a consensus bearing.
+      This bearing points from your actual location toward the
+      position the spoofing system is trying to move you to, which
+      provides directional information about the spoofing architecture.
+
+  HOW TO RUN:
+  ────────────
+
+  Basic (uses median of your own fixes as reference):
+    18,
+
+  With static ground truth (most accurate):
+    18,--ground-truth 33.800509,-117.220352
+
+  On all log files in directory:
+    18,--all-logs --ground-truth 33.800509,-117.220352
+
+  On a specific log file:
+    18,--log C:\sdr\logs\gnss_20260708_142210.jsonl.gz
+       --ground-truth 33.800509,-117.220352
+
+  From command line directly:
+    python C:\sdr\logs\gnss_anomaly_report.py
+           --ground-truth 33.800509,-117.220352
+           --out C:\sdr\logs
+
+  GROUND TRUTH:
+  ──────────────
+  The ground truth coordinate is your known static receiver position.
+  To find your actual coordinates use any mapping application while
+  the receiver is stationary outdoors with clear sky view.
+  Note: use coordinates from a session when you know the GNSS was
+  operating normally (before anomalies began) or from an independent
+  source such as a mapping application with cellular location.
+
+  If no ground truth is provided, the platform uses the median of
+  your own reported fixes as the reference. This is less reliable
+  if the receiver was spoofed throughout the session since the
+  spoofed fixes would become the reference. Providing a true ground
+  truth coordinate produces the most meaningful geometric analysis.
+
+  REPORT OUTPUT:
+  ───────────────
+  Two files per analysis run:
+
+  gnss_anomaly_report_STAMP.txt
+    Human-readable report. Contains:
+      Summary box with anomaly count by severity
+      Detailed description of each anomaly
+      Key evidence values (displacement, bearing, peak values)
+      Applicable legal statutes
+      Explanation of geometric detection method
+      Signal environment statistics (C/N0 distribution)
+
+  gnss_anomaly_report_STAMP.json
+    Machine-readable structured data. Contains all anomaly records
+    with full evidence dictionaries for import into other tools
+    or for inclusion in legal filings as structured exhibits.
+
+  SEVERITY LEVELS:
+    CRITICAL    Hardware spoof flag, single satellite survival,
+                impossible satellite geometry, fix displaced from
+                known ground truth, pseudorange implausible
+    HIGH        Constellation collapse, jamming indicator,
+                satellite position discontinuity, clock bias,
+                C/N0 anomalously strong
+    MEDIUM      Position accuracy degraded, C/N0 weak signals
+    INFO        Informational observations
+
+
+================================================================================
+  15. DASHBOARD REFERENCE
+================================================================================
+
+  RF DASHBOARD — http://localhost:8000/sweep.html
+  ─────────────────────────────────────────────────
+  Requires entry 3 (rf_server) to be running.
+
+  Panels:
+    SPECTRUM      dBFS power across sweep range with CF overlay
+    WATERFALL     power history, newest at top
+    TIME SERIES   CF (yellow), ATTEN (blue), RMS (green) over time
+    CORRELATION   CORR (magenta) / EM_ONLY (red) / RF_ONLY (cyan)
+                  with DR baseline trace (orange)
+
+  Sidebar:
+    CURRENT MEASUREMENT   live frequency, dBFS, peak, RMS, CF, atten
+    SESSION STATS         min/max/peak values for the session
+    CORR EVENTS           count of correlated events this session
+    DR CURRENT            latest Geiger dose rate
+    FREQUENCY TABLE       all scanned frequencies with latest readings
+    ANOMALY LOG           timestamped list of all anomaly events
+
+  Source selector (top bar):
+    SSE    primary — rf_server.py real-time broadcast
+    POLL   fallback — live_reader.py cursor polling
+    DEMO   synthetic test data (no hardware needed)
+
+  Click CONNECT to start data flow after selecting source.
+
+  GNSS MAP — http://localhost:8001/gnss_map.html
+  ────────────────────────────────────────────────
+  Requires entries 10 and 11 to be running.
+
+  Map markers:
+    Green   3D fix, no anomalies
+    Orange  2D fix (degraded accuracy)
+    Red     spoofing indicated (NAV-STATUS spoofDetState >= 2)
+
+  Hover over any marker for:
+    Timestamp, lat/lon, fix type, satellite count, PDOP
+    Horizontal accuracy
+    Compass heading if bridge is active
+    Spoofing warning if applicable
+
+  Panels:
+    SKY VIEW      satellite positions on polar projection
+    SAT TABLE     CNR, elevation, azimuth, usage per satellite
+    PSEUDORANGES  per-satellite range traces (checkbox to show)
+    SPOOF ALERT   CRITICAL banner when spoofDetState >= 2
+
+
+================================================================================
+  16. TROUBLESHOOTING
+================================================================================
+
+  PlutoSDR not found (iio_info fails):
+    Check USB cable (use included cable, not all cables work)
+    Check Device Manager for RNDIS adapter
+    Set static IP 192.168.2.10 on the RNDIS adapter
+    Try: ping 192.168.2.1
+    Reinstall libiio from Analog Devices GitHub
+
+  Port 8000 / 8080 / 8001 already in use:
+    Run stop.bat
+    Or: taskkill /FI "WINDOWTITLE eq CTW-rf_server" /T /F
+
+  COM port not found (FS-5000, LD6002B, GNSS):
+    Install CH340 driver from wch-ic.com
+    Check Device Manager under Ports (COM and LPT)
+    Use: 12,--list-ports to enumerate ports
+
+  Dashboard shows no data after CONNECT:
+    Verify rf_server is running (entry 3)
+    Check browser console (F12) for SSE connection errors
+    Try POLL source instead of SSE in source selector
+    Verify sweep.html is at http://localhost:8000/sweep.html
+
+  pluto_sweep crashes with MemoryError after long run:
+    Add --no-iq flag to disable IQ stream
+    Example: 5,--no-iq
+
+  GNSS anomaly report — no log files found:
+    Verify ublox_data.py and ublox_parser.py ran successfully
+    Check C:\sdr\logs\ for gnss_*.jsonl.gz files
+    Run entries 9 and 10 first, then run 18 after a session
+
+  GNSS anomaly report — ground truth coordinates wrong:
+    Use a mapping application on a clear day with good sky view
+    Use coordinates from before anomalies were observed
+    Or use an independent location source not dependent on GPS
+
+  Geometric analysis returns no displacement anomalies:
+    This is the normal result for a clean GNSS environment
+    The detections only fire when geometry is actually inconsistent
+    Verify ground truth is accurate before concluding no anomaly
+
+  60GHz sensor no data (LD6002B):
+    Run: 12,--list-ports to verify COM port
+    Verify USB-C cable is a data cable not charge-only
+    Check Device Manager for CH340 under Ports
+    Try raw dump: 12,--port COM5 --raw-dump
+
+  GPS no fix:
+    Place antenna near window or outside
+    Wait 2-5 minutes for cold start acquisition
+    Verify COM_PORT in ublox_data.py matches Device Manager
+
+  Compass no data:
+    Verify compass_bridge.py is running on phone
+    Verify: adb forward tcp:5556 tcp:5556 (run on PC)
+    Try: adb shell find /sys -name '*ak09*' 2>/dev/null
+
+  NTP sync fails or large clock offset:
+    Run in Administrator PowerShell:
+      python C:\sdr\logs\ntp_web.py
+    If offset is large, run the clock fix in ntp_web.py --fix-clock
+
+  ADB device not found:
+    Enable USB Debugging on phone (Settings then Developer Options)
+    Run: adb devices
+    Accept RSA fingerprint prompt on phone screen
+
+
+================================================================================
+  17. FILE REFERENCE
+================================================================================
+
+  SCRIPTS (in C:\sdr\logs\):
+  ──────────────────────────────────────────────────────────────────────────
+  launch.bat               Launch menu — start here
+  stop.bat                 Kill all CTW processes (auto-generated)
+  ntp_web.py               Web-based NTP sync via timeapi.io
+  gz_watch.py              Watches for new .jsonl.gz and mirrors to live
+  live_reader.py           HTTP server for sweep_live.jsonl on port 8080
+  rf_server.py             SSE broadcast server on port 8000
+  correlator.py            RF/Geiger cross-aperture correlation engine
+  pluto_sweep.py           PlutoSDR IIO forensic sweep logger
+  bt_scanner.py            Bluetooth 2.4GHz ISM band scanner
+  css_hunter.py            CSS active band scanner + AT modem + chain
+  css_idle_hunter.py       CSS idle/gap scanner (between licensed bands)
+  ublox_data.py            u-blox raw UBX capture (edit COM_PORT at top)
+  ublox_parser.py          UBX binary decoder with compass injection
+  gnss_server.py           GNSS SSE server on port 8001
+  gnss_anomaly_report.py   GNSS forensic anomaly + geometric analysis
+  hlk_ld6002b.py           HLK-LD6002B 60GHz dedicated driver
+  mmwave_sensor.py         Pluggable mmWave sensor framework
+  compass_bridge.py        Runs on phone — streams AK09916 heading
+
+  DASHBOARDS (open in browser):
+  ──────────────────────────────────────────────────────────────────────────
+  sweep.html               RF forensic monitor (port 8000)
+  gnss_map.html            GNSS forensic map with spoof alerts (port 8001)
+
+  GENERATED AT RUNTIME:
+  ──────────────────────────────────────────────────────────────────────────
+  gnss_anomaly_report_STAMP.txt    human-readable anomaly report
+  gnss_anomaly_report_STAMP.json   machine-readable anomaly report
+  css_evidence_STAMP.log           SHA-256 chain evidence log
+  css_chain_STAMP.log              chain verification hashes
+  runtime\sweep_live.jsonl         live sweep mirror
+  runtime\gnss_live.jsonl          live GNSS mirror
+  runtime\css_live.jsonl           live CSS detections
+  runtime\mmwave_live.jsonl        live 60GHz events
+  runtime\corr_live.jsonl          live correlations
+  runtime\ld6002b_cal.json         60GHz calibration (persists)
+  runtime\process_logs\*.log       per-process console output
+
+
+================================================================================
+  18. LEGAL AND EVIDENTIARY NOTES
+================================================================================
+
+  All forensic logs produced by CTW SENTINEL are structured for
+  admissibility under the Daubert standard.
+
+  CHAIN OF CUSTODY:
+    Session headers record the ClockAnchor epoch, NTP source,
+    NTP offset, instrument firmware versions, and all configuration
+    parameters. CSS hunter produces SHA-256 chain-linked evidence
+    verifiable for tamper-evidence post-session.
+
+  TIMESTAMP ACCURACY:
+    Wall clock calibrated against timeapi.io at session start.
+    Offset recorded in session header.
+    Monotonic timestamps relative to the anchor are accurate to
+    nanosecond precision independent of NTP accuracy.
+
+  GNSS REPORT EVIDENTIARY VALUE:
+    The geometric anomaly report documents inconsistencies between
+    reported satellite positions and the physics of GPS orbital
+    mechanics. Detection 10 (impossible satellite geometry) produces
+    displacement vectors and consensus bearings that are derived
+    entirely from the receiver's own reported data using standard
+    spherical geometry — no proprietary methods, no black-box
+    analysis. The methodology is fully reproducible and documented
+    in the script source code.
+
+  RELEVANT STATUTES FOR DETECTED VIOLATIONS:
+    47 U.S.C. § 333    willful interference with licensed communications
+    47 U.S.C. § 301    unlicensed operation of radio transmitter
+    18 U.S.C. § 2512   manufacture/possession of interception device
+    18 U.S.C. § 2511   unlawful interception of communications
+    18 U.S.C. § 1030   computer fraud (GPS timing infrastructure attacks)
+    47 C.F.R. § 15.5   unlicensed device interference prohibition
+
+  PATENT PROTECTION:
+    USPTO application 19/466,387 — Cryptographic Replacement MAC
+    Passive spatial detection patent (21 claims) — filed
+    Dual-aperture wireless forensic correlation — documented herein
+
+  INVENTOR: Christopher T. Williams
+  All inventive concepts, sensor architecture, correlation methodology,
+  classification taxonomy, and forensic visualization design were
+  conceived and specified by Christopher T. Williams.
+
+================================================================================
+  END OF INSTRUCTIONS
+  CTW SENTINEL | Advanced CTW Research
+================================================================================
