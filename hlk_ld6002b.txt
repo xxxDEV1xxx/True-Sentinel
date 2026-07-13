@@ -1,0 +1,24 @@
+Set --room-x and --room-y to your actual room dimensions in centimeters. Set --mount-x and --mount-y 
+to where the module sits relative to the southwest corner of the room. 
+The null space calculation and wall triangulation only become meaningful when those numbers reflect reality.
+Step 1 — empty room baseline (5 minutes):
+python hlk_ld6002b.py --port COM5 --phase empty
+        --room-x 400 --room-y 400 --room-z 250
+        --mount-x 200 --mount-y 200 --out C:\sdr\logs
+
+Step 2 — human reference (walk all 4 walls):
+python hlk_ld6002b.py --port COM5 --phase human
+        --room-x 400 --room-y 400 --room-z 250
+        --mount-x 200 --mount-y 200 --out C:\sdr\logs
+
+Step 3 — forensic scan:
+python hlk_ld6002b.py --port COM5 --phase scan
+        --room-x 400 --room-y 400 --room-z 250
+        --mount-x 200 --mount-y 200 --out C:\sdr\logs
+
+
+
+.old ver
+python C:\sdr\logs\hlk_ld6002b.py --list-ports
+python C:\sdr\logs\hlk_ld6002b.py --port COM5 --out C:\sdr\logs
+python C:\sdr\logs\hlk_ld6002b.py --port COM5 --out C:\sdr\logs --empty-room

@@ -1,0 +1,5 @@
+run.bat
+run.bat --demo
+run.bat --freqs 386000000 386020000
+run.bat --start 385800000 --stop 386200000 --step 10000
+run.bat --demo --no-browser

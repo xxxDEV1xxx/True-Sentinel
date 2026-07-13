@@ -1,0 +1,10 @@
+1 4 5, 12,--port COM5 --phase scan 16,
+│ │ └─ no comma = default args for [5]
+│ └─── [4] gets default args (comma would close it but next token is number)
+└───── [1] gets default args
+
+12,--port COM5 --phase scan
+│   └──────────────────────── args for [12]
+└─ [12] entry
+
+16,   ← [16] with no args (comma just closes it cleanly)

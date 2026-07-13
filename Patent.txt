@@ -1,0 +1,183 @@
+Title:
+System and Method for Dual-Aperture Wireless Forensic Signal Correlation Using a Vacuum-Envelope Electromagnetic Sensor and Software-Defined Radio Receiver With Nanosecond-Precision Temporal Alignment
+Inventor:
+Christopher T. Williams
+
+Field of the Invention
+The present invention relates generally to wireless signal forensics and, more particularly, to a dual-aperture signal acquisition and correlation architecture in which a vacuum-envelope electromagnetic sensor and a software-defined radio receiver are operated as complementary detection instruments sharing a common nanosecond-precision clock reference, with automated real-time classification and visualization of temporally coincident signal events across both apertures.
+
+Background of the Invention
+Geiger-Müller tube instruments are conventionally employed for ionizing radiation dosimetry. The Geiger-Müller tube is a sealed vacuum envelope containing a central anode wire and cylindrical cathode, filled with an inert gas mixture, designed to produce electrical discharge pulses upon ionization of the fill gas by incident ionizing particles or photons.
+It is known in the art that Geiger-Müller tubes and associated counting circuitry are sensitive to electromagnetic induction from external radio frequency sources. This sensitivity is typically treated as an interference artifact to be suppressed in radiation measurement applications. The present invention inverts this characterization, recognizing that the electromagnetic induction sensitivity of the Geiger-Müller tube constitutes a broadband, vacuum-envelope-isolated electromagnetic aperture with detection characteristics distinct from conventional antenna structures, and that this sensitivity can be exploited as a forensic signal acquisition channel complementary to software-defined radio reception.
+Software-defined radio platforms provide configurable radio frequency reception across wide frequency ranges with programmable gain, bandwidth, and sampling parameters. Existing software-defined radio forensic tools log received signal strength, in-phase and quadrature samples, power spectral density, and derived metrics including crest factor and peak-to-average power ratio. These tools operate as single-aperture instruments and do not incorporate complementary sensor modalities.
+No prior art system is known to operate a Geiger-Müller tube instrument and a software-defined radio receiver as a unified dual-aperture wireless forensic sensor pair, to align their event streams on a common nanosecond-precision clock reference, or to perform automated real-time classification of temporally coincident events across both apertures.
+Accordingly, there exists a need for a dual-aperture wireless forensic architecture that exploits the complementary detection characteristics of vacuum-envelope electromagnetic sensors and software-defined radio receivers, aligns their output streams on a shared clock reference, and produces machine-readable correlation records and real-time visualizations suitable for forensic evidentiary purposes.
+
+Summary of the Invention
+The present invention provides a dual-aperture wireless forensic signal correlation system comprising a vacuum-envelope electromagnetic sensor stream, a software-defined radio receiver stream, a shared nanosecond-precision clock anchor, a real-time correlation engine, and a forensic visualization interface.
+The vacuum-envelope electromagnetic sensor produces a pulse event stream derived from electromagnetic induction in the Geiger-Müller tube structure. The software-defined radio receiver produces a continuous measurement stream comprising received signal strength, crest factor, power spectral density, and anomaly classifications across a configurable frequency range. Both streams are timestamped using a common monotonic clock anchor calibrated against an external time reference, such that inter-stream temporal differences are meaningful to nanosecond precision.
+The correlation engine continuously monitors both streams, maintains time-indexed ring buffers of recent events from each aperture, and classifies events into one of three categories: correlated events in which an electromagnetic sensor pulse and a radio frequency anomaly occur within a configurable temporal window; sensor-only events in which an electromagnetic sensor pulse occurs without a corresponding radio frequency anomaly; and radio-frequency-only events in which a radio frequency anomaly occurs without a corresponding electromagnetic sensor pulse.
+Correlated events include computed temporal offset values representing the signed time difference between the electromagnetic sensor pulse and the nearest radio frequency anomaly, enabling determination of which aperture detected the underlying signal event first. All correlation records are emitted to a machine-readable output stream and presented on a real-time forensic visualization dashboard.
+
+Brief Description of the Drawings
+ASCII functional block diagrams:
+FIG. 1 — Dual-Aperture Sensor Architecture
+
+  [GM Tube / EM Aperture]          [PlutoSDR / RF Aperture]
+         |                                   |
+  [Serial + Audio Stream]          [IQ + Sweep Stream]
+         |                                   |
+         +----------[ClockAnchor]------------+
+                          |
+                  [Correlation Engine]
+                          |
+              +-----------+-----------+
+              |           |           |
+           [CORR]    [EM_ONLY]   [RF_ONLY]
+              |           |           |
+              +-----[corr_live.jsonl]-+
+                          |
+                  [Forensic Dashboard]
+
+
+FIG. 2 — Correlation Engine Classification Logic
+
+  EM pulse detected?
+         |
+         YES --> RF anomaly within window?
+                      |
+                      YES --> emit CORR event with delta_t
+                      |
+                      NO  --> emit EM_ONLY event
+         |
+         NO  --> RF anomaly detected?
+                      |
+                      YES --> emit RF_ONLY event
+                      |
+                      NO  --> continue monitoring
+
+
+FIG. 3 — Forensic Dashboard Layout
+
+  [Spectrum Panel: dBFS / CF / PEAK overlay]
+  [Waterfall Panel: dBFS power history]
+  [Time Series Panel: CF / ATTEN / RMS]
+  [Correlation Panel: CORR / EM_ONLY / RF_ONLY / EM baseline]
+  [Sidebar: current measurement / session stats / anomaly log]
+
+Detailed Description of the Invention
+1. System Overview
+The invention comprises a dual-aperture wireless forensic sensor system including a first acquisition subsystem comprising a Geiger-Müller tube instrument operated as a vacuum-envelope electromagnetic aperture, a second acquisition subsystem comprising a software-defined radio receiver, a clock synchronization module, a correlation engine, a forensic log subsystem, and a real-time visualization interface.
+
+2. First Aperture: Vacuum-Envelope Electromagnetic Sensor
+The first aperture comprises a Geiger-Müller tube instrument connected to a host computing system via a serial interface and an audio interface. The serial interface provides a continuous data stream comprising dose rate values, counts per minute, counts per second, and accumulated dose. The audio interface provides a pulse stream derived from the audible output of the instrument, in which each electrical pulse corresponds to a single detection event in the Geiger-Müller tube.
+The Geiger-Müller tube functions as a broadband electromagnetic aperture by virtue of electromagnetic induction sensitivity inherent to the vacuum-envelope structure, central anode wire geometry, and associated counting electronics. Pulse events on the audio channel represent electromagnetic induction events and are not attributed to ionizing particle detection for purposes of this invention. Baseline ionizing radiation levels at the deployment site are independently established and held constant as a reference parameter.
+The first aperture pulse detection subsystem applies a calibrated amplitude threshold and a refractory interval to the audio pulse stream. The amplitude threshold is derived from a calibration period comprising the highest observed amplitude multiplied by a configurable sensitivity factor. The refractory interval prevents multiple pulse registrations from a single electromagnetic induction event.
+
+3. Second Aperture: Software-Defined Radio Receiver
+The second aperture comprises a software-defined radio platform, including but not limited to an ADALM-PLUTO or equivalent device, configured to perform continuous frequency sweep acquisition across a configurable frequency range. The second aperture produces a measurement stream comprising, for each frequency step: received signal strength expressed as attenuation register value and decibels relative to full scale, root mean square amplitude, peak amplitude, crest factor, in-phase and quadrature sample data, and a binary anomaly classification based on a configurable threshold.
+Crest factor, defined as the ratio of peak amplitude to root mean square amplitude, is employed as a primary anomaly discriminator because impulsive or burst-mode wireless transmissions produce elevated crest factor values distinguishable from thermal noise and continuous wave signals.
+
+4. Common Clock Anchor
+Both aperture streams are timestamped using a common clock anchor module. The clock anchor establishes a monotonic epoch by recording the system monotonic counter value and the wall clock value at a single calibration instant, minimizing the interval between the two readings across repeated trials to reduce jitter. Subsequent timestamps in both streams are derived by adding the elapsed monotonic counter value to the wall clock epoch, producing wall clock timestamps with nanosecond precision that are consistent across both aperture streams regardless of operating system scheduling effects.
+The wall clock epoch is calibrated against an external web time reference at session initialization, providing absolute UTC traceability. The signed offset between the system clock and the external time reference is recorded in the forensic session header and applied as a correction factor to all reported timestamps.
+
+5. Correlation Engine
+The correlation engine maintains two time-indexed ring buffers, one per aperture, each with a configurable maximum capacity. Ring buffer entries are indexed by wall clock nanosecond timestamp.
+Upon detection of an anomalous event in either aperture stream, the correlation engine queries the opposite aperture ring buffer for entries within a configurable temporal window centered on the event timestamp. The temporal window is symmetric and configurable, with a default value of five hundred milliseconds.
+Events are classified as follows:
+A CORR event is emitted when an electromagnetic sensor pulse coincides with one or more radio frequency anomalies within the temporal window. The CORR record includes the electromagnetic sensor pulse timestamp, the nearest radio frequency anomaly timestamp, the signed temporal offset between them expressed in milliseconds, the radio frequency of the anomalous signal, the received signal strength, the crest factor, and the count of radio frequency anomalies present within the window. The sign convention of the temporal offset is defined such that a negative value indicates the radio frequency anomaly preceded the electromagnetic sensor pulse and a positive value indicates the electromagnetic sensor pulse preceded the radio frequency anomaly.
+An EM_ONLY event is emitted when an electromagnetic sensor pulse occurs without any radio frequency anomaly present in the temporal window. The EM_ONLY record includes the pulse timestamp, amplitude, and the count of non-anomalous radio frequency measurements present in the window.
+An RF_ONLY event is emitted when a radio frequency anomaly occurs without any electromagnetic sensor pulse present in the temporal window. The RF_ONLY event is emitted from the radio frequency aperture processing path to prevent double-counting with CORR events emitted from the electromagnetic sensor processing path.
+A secondary anomaly reclassification pass is applied after each acquisition cycle. Records in which the crest factor exceeds a configurable threshold and the received signal strength exceeds the session noise floor by a configurable margin are reclassified as anomalous regardless of the primary threshold classification. This secondary pass captures frequency-hopping spread spectrum transmissions with short dwell times that may not satisfy the primary attenuation threshold.
+
+6. Audio Burst Rate Classifier
+The correlation engine maintains a sliding one-second window of electromagnetic sensor audio pulse events. The pulse rate within this window is computed continuously and compared against a configurable burst rate threshold. When the pulse rate exceeds the threshold, the audio burst flag is set in all correlation records emitted during that interval, providing an independent corroboration channel for high-intensity wireless events.
+
+7. Forensic Log Subsystem
+All events from both aperture streams and all correlation engine outputs are written to compressed forensic log files in newline-delimited JSON format. Each record includes the wall clock nanosecond timestamp, the monotonic nanosecond offset from session epoch, the ISO 8601 UTC timestamp, and all measurement fields relevant to the record type.
+Correlation engine output is additionally written to a plain-text newline-delimited JSON live stream file for consumption by the real-time visualization interface without decompression latency.
+The forensic session header record written at session initialization includes the clock anchor wall clock nanosecond epoch, the monotonic epoch, the external time reference source, the measured system clock offset, the instrument serial numbers and firmware versions, and all configurable parameters governing the session.
+
+8. Real-Time Visualization Interface
+The visualization interface comprises a browser-based dashboard receiving correlation engine output via a server-sent events stream. The dashboard renders the following panels:
+A spectrum panel displaying received signal strength in decibels relative to full scale, peak signal strength, and crest factor as overlaid traces across the configured frequency range, with anomaly markers at frequencies where anomalous events have been detected.
+A waterfall panel displaying received signal strength as a two-dimensional heat map with frequency on the horizontal axis and sweep pass number on the vertical axis, rendered using direct pixel writes to an ImageData buffer for performance.
+A time series panel displaying crest factor, attenuation, and root mean square amplitude as time-ordered traces across recent sweep records.
+A correlation panel displaying CORR events as vertical markers with temporal offset annotations, EM_ONLY events as markers of a distinct color, RF_ONLY events as markers of a third distinct color, and the electromagnetic sensor dose rate baseline as a continuous trace, all rendered on a common time axis spanning a configurable recent interval.
+The sidebar displays current measurement values, session statistics, and an anomaly event log with entries for each CORR, EM_ONLY, and RF_ONLY event including timestamp, frequency, crest factor, dose rate, and temporal offset.
+
+9. Provenance Classification of External Data
+All numeric values received from external sources including both aperture instrument streams, network interfaces, and user-supplied parameters are subject to provenance classification prior to use. Each value is classified as VALIDATED if within defined bounds, CLAMPED if outside bounds but recoverable by range restriction, or REJECTED if non-finite or structurally invalid. Rejected values are discarded without use. Clamped values are logged with a warning. This classification is applied at the boundary between external data ingestion and internal processing and is not bypassed under any circumstance.
+
+10. Implementation Platforms
+The invention may be implemented on any computing platform supporting serial and audio interface connectivity, software-defined radio connectivity via USB or Ethernet, and a standards-compliant web browser. Implementation platforms include but are not limited to laptop and desktop computing systems running Windows, Linux, or macOS operating systems.
+
+Examiner-Friendly Glossary
+
+Dual-Aperture: Two physically distinct sensor modalities operating as complementary detection instruments within a unified forensic system.
+Vacuum-Envelope Electromagnetic Sensor: A Geiger-Müller tube instrument exploited for its electromagnetic induction sensitivity rather than its ionizing particle detection function.
+Clock Anchor: A monotonic epoch calibrated against an external time reference providing nanosecond-precision timestamps consistent across heterogeneous sensor streams.
+CORR Event: A classified correlation record documenting temporal coincidence of events from both apertures within a defined window.
+EM_ONLY Event: A classified record documenting an electromagnetic sensor pulse without corresponding radio frequency anomaly.
+RF_ONLY Event: A classified record documenting a radio frequency anomaly without corresponding electromagnetic sensor pulse.
+Temporal Offset: The signed nanosecond or millisecond difference between the timestamps of correlated events from each aperture, indicating which aperture detected the underlying signal first.
+Crest Factor: The ratio of peak amplitude to root mean square amplitude, used as a primary discriminator for impulsive wireless transmission signatures.
+Provenance Classification: The categorization of externally supplied numeric values as VALIDATED, CLAMPED, or REJECTED prior to internal use.
+
+
+Inventorship and AI Assistance Statement
+All inventive concepts, sensor architecture, correlation methodology, classification taxonomy, clock synchronization approach, and forensic visualization design were conceived and specified by Christopher T. Williams. AI tools were used solely for drafting and organizing content under inventor direction.
+
+Conclusion
+This invention provides a dual-aperture wireless forensic sensor architecture exploiting the complementary detection characteristics of a vacuum-envelope electromagnetic sensor and a software-defined radio receiver. Nanosecond-precision temporal alignment of both streams enables automated real-time classification of co-occurring signal events, production of machine-readable forensic correlation records, and real-time visualization of the temporal relationship between electromagnetic sensor pulses and radio frequency anomalies.
+
+CLAIMS
+1. A dual-aperture wireless forensic signal correlation system, comprising:
+
+a first sensor subsystem comprising a vacuum-envelope electromagnetic sensor producing a pulse event stream derived from electromagnetic induction;
+a second sensor subsystem comprising a software-defined radio receiver producing a continuous measurement stream comprising received signal strength, crest factor, and anomaly classifications across a configurable frequency range;
+a clock anchor module establishing a common nanosecond-precision monotonic timestamp reference calibrated against an external time source and applied to both sensor streams;
+a correlation engine maintaining time-indexed ring buffers of recent events from each sensor subsystem and classifying events as correlated, first-aperture-only, or second-aperture-only based on temporal proximity within a configurable window; and
+a forensic log subsystem writing all events and correlation classifications to timestamped machine-readable records.
+
+2. The system of claim 1, wherein correlated event records include a signed temporal offset value representing the time difference between the first aperture event and the nearest second aperture event, indicating which aperture detected the underlying signal first.
+3. The system of claim 1, wherein the correlation engine applies a secondary anomaly reclassification pass promoting records exhibiting elevated crest factor and received signal strength exceeding a session noise floor margin to anomalous classification regardless of primary threshold result.
+4. The system of claim 1, wherein the first sensor subsystem acquires pulse events through both a serial data interface providing dose rate and count measurements and an audio interface providing individual pulse detections, and wherein the audio pulse stream is processed with a calibrated amplitude threshold and refractory interval.
+5. The system of claim 1, wherein the clock anchor module records the signed offset between the system clock and an external web time reference at session initialization and includes this offset in a forensic session header record.
+6. The system of claim 1, further comprising a real-time visualization interface receiving correlation engine output via a server-sent events stream and rendering a correlation panel displaying correlated events, first-aperture-only events, and second-aperture-only events as temporally ordered markers on a common time axis alongside a first aperture baseline trace.
+7. The system of claim 1, wherein all numeric values received from external sources are subject to provenance classification as VALIDATED, CLAMPED, or REJECTED prior to use in any internal computation, ring buffer insertion, or log record emission.
+8. The system of claim 1, wherein the correlation engine maintains a sliding temporal window of first aperture pulse events and computes a pulse rate therefrom, setting an audio burst flag in correlation records when the pulse rate exceeds a configurable threshold.
+9. A method for dual-aperture wireless forensic signal correlation, comprising:
+
+acquiring a pulse event stream from a vacuum-envelope electromagnetic sensor via serial and audio interfaces;
+acquiring a radio frequency measurement stream from a software-defined radio receiver across a configurable frequency range;
+timestamping events in both streams using a common nanosecond-precision clock anchor calibrated against an external time reference;
+maintaining time-indexed ring buffers of recent events from each stream;
+upon detection of an anomalous event in either stream, querying the opposite stream ring buffer for events within a configurable temporal window;
+classifying each anomalous event as correlated, first-aperture-only, or second-aperture-only based on the query result;
+computing a signed temporal offset for correlated events; and
+writing all events and classifications to timestamped forensic log records.
+
+10. The method of claim 9, further comprising rendering a real-time visualization dashboard displaying correlated events, aperture-only events, and baseline sensor traces on a common time axis.
+11. A non-transitory computer-readable medium storing instructions that cause a computing system to perform the method of claim 9.
+12. A forensic instrumentation system, comprising:
+
+a first electromagnetic aperture comprising a Geiger-Müller tube instrument producing pulse events through electromagnetic induction sensitivity of the vacuum-envelope structure;
+a second electromagnetic aperture comprising a software-defined radio receiver producing frequency-resolved signal measurements;
+a shared clock anchor providing nanosecond-precision wall clock timestamps to both apertures calibrated against an external UTC time source;
+a correlation engine classifying temporal coincidence of anomalous events across both apertures within a configurable window and computing signed temporal offsets between coincident events; and
+a visualization interface rendering correlated and aperture-only events on a common forensic time axis with per-event temporal offset annotation.
+
+
+Independent Claims:
+
+Claim 1 — System
+Claim 9 — Method
+Claim 11 — Non-transitory computer-readable medium
+Claim 12 — Forensic instrumentation system
+
+Dependent Claims:
+
+Claims 2–8 depend on Claim 1
+Claim 10 depends on Claim 9

@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CTW GNSS Forensic Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background:#0a0a0f;
+  color:#00ff88;
+  font-family:'Courier New', monospace;
+  font-size:12px;
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+  overflow:hidden;
+}
+
+/* ── Header ── */
+#header {
+  background:#0d0d1a;
+  border-bottom:1px solid #00ff8844;
+  padding:6px 16px;
+  display:flex;
+  align-items:center;
+  gap:24px;
+  flex-shrink:0;
+}
+
+#header .title {
+  color:#00ff88;
+  font-size:13px;
+  font-weight:bold;
+  letter-spacing:2px;
+}
+
+.dot {
+  display:inline-block;
+  width:8px; height:8px;
+  border-radius:50%;
+  background:#333;
+  margin-right:6px;
+}
+.dot.live  { background:#00ff88; box-shadow:0 0 6px #00ff88; animation:pulse 1s infinite; }
+.dot.stale { background:#ffaa00; }
+.dot.error { background:#ff4444; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.hdr-stat { color:#88ffcc; font-size:11px; }
+.hdr-stat span { color:#fff; font-weight:bold; }
+.spoof-alert { color:#ff4444; font-weight:bold; animation:pulse 0.5s infinite; }
+
+/* ── Controls bar ── */
+#controls {
+  background:#0d0d1a;
+  border-bottom:1px solid #00ff8822;
+  padding:4px 16px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  font-size:10px;
+  flex-shrink:0;
+}
+
+#controls label { color:#00ff8866; }
+
+#controls select, #controls button {
+  background:#0a0a0f;
+  color:#00ff88;
+  border:1px solid #00ff8844;
+  padding:2px 8px;
+  font-family:'Courier New',monospace;
+  font-size:10px;
+  cursor:pointer;
+}
+
+.toggle-btn {
+  background:#0a0a0f;
+  color:#00ff88;
+  border:1px solid #00ff8844;
+  padding:2px 10px;
+  font-family:'Courier New',monospace;
+  font-size:10px;
+  cursor:pointer;
+}
+
+.toggle-btn.active {
+  background:#00ff8822;
+  border-color:#00ff88;
+}
+
+/* ── Main layout ── */
+#main {
+  display:flex;
+  flex:1;
+  overflow:hidden;
+}
+
+/* ── Map ── */
+#map {
+  flex:1;
+  position:relative;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  width:300px;
+  background:#0d0d1a;
+  border-left:1px solid #00ff8822;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  flex-shrink:0;
+}
+
+.sb-section {
+  border-bottom:1px solid #00ff8822;
+  padding:8px 12px;
+  flex-shrink:0;
+}
+
+.sb-section h3 {
+  font-size:10px;
+  color:#00ff8866;
+  letter-spacing:1px;
+  margin-bottom:6px;
+  text-transform:uppercase;
+}
+
+.metric-row {
+  display:flex;
+  justify-content:space-between;
+  margin-bottom:3px;
+  font-size:11px;
+}
+
+.ml { color:#668877; }
+.mv { color:#fff; font-weight:bold; }
+.mv.hot  { color:#ff4444; }
+.mv.warm { color:#ffaa00; }
+.mv.cold { color:#00ff88; }
+.mv.spoof { color:#ff4444; font-weight:bold; animation:pulse 0.5s infinite; }
+
+/* ── Sky view (constellation) ── */
+#sky-wrap {
+  padding:8px 12px;
+  flex-shrink:0;
+  border-bottom:1px solid #00ff8822;
+}
+
+#sky-wrap h3 {
+  font-size:10px;
+  color:#00ff8866;
+  letter-spacing:1px;
+  margin-bottom:6px;
+  text-transform:uppercase;
+}
+
+#sky-canvas {
+  display:block;
+  margin:0 auto;
+}
+
+/* ── Satellite table ── */
+#sat-wrap {
+  flex:1;
+  overflow-y:auto;
+  min-height:0;
+}
+
+#sat-wrap::-webkit-scrollbar { width:4px; }
+#sat-wrap::-webkit-scrollbar-track { background:#0a0a0f; }
+#sat-wrap::-webkit-scrollbar-thumb { background:#00ff8844; }
+
+.sat-header {
+  display:grid;
+  grid-template-columns:40px 36px 28px 30px 30px 28px 36px;
+  gap:2px;
+  padding:3px 12px;
+  font-size:9px;
+  color:#00ff8844;
+  border-bottom:1px solid #00ff8822;
+  text-transform:uppercase;
+  position:sticky;
+  top:0;
+  background:#0d0d1a;
+}
+
+.sat-row {
+  display:grid;
+  grid-template-columns:40px 36px 28px 30px 30px 28px 36px;
+  gap:2px;
+  padding:2px 12px;
+  font-size:10px;
+  border-left:2px solid transparent;
+}
+
+.sat-row.used   { border-left-color:#00ff88; }
+.sat-row.unused { color:#668877; }
+.sat-row.weak   { color:#ffaa00; }
+
+/* ── Pseudorange panel ── */
+#pr-panel {
+  display:none;
+  border-top:1px solid #00ff8822;
+  flex-shrink:0;
+  height:160px;
+  position:relative;
+}
+
+#pr-panel.visible { display:block; }
+
+#pr-canvas {
+  display:block;
+  width:100%;
+  height:100%;
+}
+
+/* ── Spoof panel ── */
+#spoof-panel {
+  padding:6px 12px;
+  border-bottom:1px solid #00ff8822;
+  flex-shrink:0;
+  display:none;
+}
+
+#spoof-panel.alert {
+  display:block;
+  background:#1a0000;
+  border-color:#ff4444;
+}
+
+#spoof-panel h3 {
+  font-size:10px;
+  color:#ff4444;
+  letter-spacing:1px;
+  margin-bottom:4px;
+}
+
+.spoof-row {
+  font-size:11px;
+  color:#ff8888;
+  margin-bottom:2px;
+}
+
+/* ── Tooltip override ── */
+.ctw-tooltip {
+  background:#0a0a0f !important;
+  border:1px solid #00ff8844 !important;
+  color:#00ff88 !important;
+  font-family:'Courier New',monospace !important;
+  font-size:11px !important;
+  padding:6px 10px !important;
+  border-radius:3px !important;
+  min-width:220px;
+}
+
+.ctw-tooltip.spoof {
+  border-color:#ff4444 !important;
+  background:#1a0000 !important;
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div class="title"><span class="dot" id="live-dot"></span>CTW GNSS FORENSIC MAP</div>
+  <div class="hdr-stat">FIX <span id="hdr-fix">—</span></div>
+  <div class="hdr-stat">SVs <span id="hdr-sv">—</span></div>
+  <div class="hdr-stat">PDOP <span id="hdr-pdop">—</span></div>
+  <div class="hdr-stat">POINTS <span id="hdr-pts">0</span></div>
+  <div class="hdr-stat">JAM <span id="hdr-jam">—</span></div>
+  <div class="hdr-stat" id="hdr-spoof-wrap" style="display:none">
+    SPOOF <span class="spoof-alert" id="hdr-spoof">—</span>
+  </div>
+  <div class="hdr-stat">LAST <span id="hdr-time">—</span></div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <label>TILES</label>
+  <select id="tile-select">
+    <option value="street">Street (OSM)</option>
+    <option value="satellite">Satellite (ESRI)</option>
+    <option value="topo">Topographic</option>
+    <option value="dark">Dark (CartoDB)</option>
+  </select>
+
+  <button class="toggle-btn" id="btn-track">TRACK ON</button>
+  <button class="toggle-btn" id="btn-pr">PSEUDORANGES OFF</button>
+  <button class="toggle-btn" id="btn-towers">TOWERS ON</button>
+  <button class="toggle-btn" id="btn-follow">FOLLOW ON</button>
+
+  <span style="color:#668877; margin-left:auto" id="src-status">connecting...</span>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <div id="map"></div>
+
+  <div id="sidebar">
+
+    <!-- Spoof alert -->
+    <div id="spoof-panel">
+      <h3>SPOOF DETECTION ALERT</h3>
+      <div id="spoof-detail"></div>
+    </div>
+
+    <!-- Current fix -->
+    <div class="sb-section">
+      <h3>Current Fix</h3>
+      <div class="metric-row"><span class="ml">FIX TYPE</span><span class="mv" id="s-fix">—</span></div>
+      <div class="metric-row"><span class="ml">LATITUDE</span><span class="mv" id="s-lat">—</span></div>
+      <div class="metric-row"><span class="ml">LONGITUDE</span><span class="mv" id="s-lon">—</span></div>
+      <div class="metric-row"><span class="ml">ALT MSL</span><span class="mv" id="s-alt">—</span></div>
+      <div class="metric-row"><span class="ml">H ACC</span><span class="mv" id="s-hacc">—</span></div>
+      <div class="metric-row"><span class="ml">V ACC</span><span class="mv" id="s-vacc">—</span></div>
+      <div class="metric-row"><span class="ml">SVs USED</span><span class="mv" id="s-sv">—</span></div>
+      <div class="metric-row"><span class="ml">PDOP</span><span class="mv" id="s-pdop">—</span></div>
+      <div class="metric-row"><span class="ml">SPOOF STATE</span><span class="mv" id="s-spoof">—</span></div>
+      <div class="metric-row"><span class="ml">JAM IND</span><span class="mv" id="s-jam">—</span></div>
+      <div class="metric-row"><span class="ml">CLK BIAS</span><span class="mv" id="s-clk">—</span></div>
+      <div class="metric-row"><span class="ml">TIMESTAMP</span><span class="mv" id="s-time" style="font-size:10px">—</span></div>
+    </div>
+
+    <!-- Sky view -->
+    <div id="sky-wrap">
+      <h3>Sky View — Constellation</h3>
+      <canvas id="sky-canvas" width="276" height="140"></canvas>
+    </div>
+
+    <!-- Satellite table -->
+    <div class="sat-header">
+      <span>SV</span><span>GNSS</span><span>CNR</span>
+      <span>EL</span><span>AZ</span><span>USE</span><span>PR RES</span>
+    </div>
+    <div id="sat-wrap">
+      <div id="sat-list"></div>
+    </div>
+
+    <!-- Pseudorange panel -->
+    <div id="pr-panel">
+      <canvas id="pr-canvas"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ═══════════════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════════════
+
+const SSE_URL     = 'http://localhost:8001/sse';
+const STALE_MS    = 5000;
+const MAX_TRACK   = 2000;
+const MAX_PR_HIST = 64;
+
+// ═══════════════════════════════════════════════════════════════════════
+// TILE PROVIDERS
+// ═══════════════════════════════════════════════════════════════════════
+
+const TILES = {
+  street: {
+    url:  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attr: '&copy; OpenStreetMap contributors',
+  },
+  satellite: {
+    url:  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attr: 'Tiles &copy; Esri',
+  },
+  topo: {
+    url:  'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attr: '&copy; OpenTopoMap',
+  },
+  dark: {
+    url:  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attr: '&copy; CartoDB',
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════
+
+let map, tileLayer;
+let trackLine   = null;
+let trackPoints = [];          // [{lat,lon,wall_ns,fix,spoof}]
+let markers     = [];
+let firstFix    = null;
+
+let showTrack   = true;
+let showPR      = false;
+let showTowers  = true;
+let followMode  = true;
+
+let lastDataAt  = 0;
+let staleTimer  = null;
+
+// Latest records
+let latestPVT    = null;
+let latestSAT    = null;
+let latestSTATUS = null;
+let latestCLK    = null;
+let latestHW     = null;
+let latestRXMRAW = null;
+
+// PR history per SV: svKey -> [{t, pr}]
+const prHistory = {};
+
+// ═══════════════════════════════════════════════════════════════════════
+// MAP INIT
+// ═══════════════════════════════════════════════════════════════════════
+
+function initMap(lat, lon) {
+  if (map) return;
+
+  map = L.map('map', {
+    center:    [lat, lon],
+    zoom:      17,
+    zoomControl: true,
+  });
+
+  tileLayer = L.tileLayer(TILES.street.url, {
+    attribution: TILES.street.attr,
+    maxZoom: 19,
+  }).addTo(map);
+
+  trackLine = L.polyline([], {
+    color:   '#00ff88',
+    weight:  2,
+    opacity: 0.7,
+  }).addTo(map);
+
+  document.getElementById('tile-select').addEventListener('change', e => {
+    const cfg = TILES[e.target.value];
+    tileLayer.setUrl(cfg.url);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// RECORD INGESTORS
+// ═══════════════════════════════════════════════════════════════════════
+
+function ingestPVT(r) {
+  latestPVT = r;
+  if (r.lat == null || r.lon == null) return;
+  if (Math.abs(r.lat) < 0.001 && Math.abs(r.lon) < 0.001) return; // 0,0 guard
+  if (!r.gps_fix_ok) return;
+
+  // First fix — initialise map
+  if (!firstFix) {
+    firstFix = { lat: r.lat, lon: r.lon };
+    initMap(r.lat, r.lon);
+  }
+
+  // Track point
+  const pt = {
+    lat:     r.lat,
+    lon:     r.lon,
+    wall_ns: r.wall_ns,
+    fix:     r.fix_name,
+    spoof:   latestSTATUS?.spoofing || false,
+    hacc:    r.h_acc_m,
+    numSV:   r.numSV,
+    pdop:    r.p_dop,
+    wall_iso:r.wall_iso,
+  };
+  trackPoints.push(pt);
+  if (trackPoints.length > MAX_TRACK) trackPoints.shift();
+
+  // Track line
+  if (showTrack && trackLine) {
+    trackLine.addLatLng([r.lat, r.lon]);
+  }
+
+  // Point marker
+  addFixMarker(pt);
+
+  // Follow mode
+  if (followMode && map) {
+    map.panTo([r.lat, r.lon]);
+  }
+
+  // Sidebar
+  updateFixSidebar(r);
+
+  // Header
+  document.getElementById('hdr-fix').textContent  = r.fix_name;
+  document.getElementById('hdr-sv').textContent   = r.numSV ?? '—';
+  document.getElementById('hdr-pdop').textContent = r.p_dop != null ? r.p_dop.toFixed(2) : '—';
+  document.getElementById('hdr-pts').textContent  = trackPoints.length;
+  document.getElementById('hdr-time').textContent = r.wall_iso ? r.wall_iso.slice(11,23) : '—';
+}
+
+function ingestSTATUS(r) {
+  latestSTATUS = r;
+  updateSpoofDisplay(r);
+}
+
+function ingestSAT(r) {
+  latestSAT = r;
+  renderSkyView(r);
+  renderSatTable(r);
+}
+
+function ingestCLK(r) {
+  latestCLK = r;
+  const el = document.getElementById('s-clk');
+  if (el) el.textContent = r.clk_bias_ns != null
+    ? `${r.clk_bias_ns} ns` : '—';
+}
+
+function ingestHW(r) {
+  latestHW = r;
+  const jam = r.jam_ind ?? 0;
+  const el  = document.getElementById('s-jam');
+  const hdr = document.getElementById('hdr-jam');
+  const txt = `${jam}/255`;
+  if (el)  { el.textContent = txt; el.className = 'mv' + (jam > 100 ? ' hot' : jam > 50 ? ' warm' : ''); }
+  if (hdr) hdr.textContent = txt;
+}
+
+function ingestRXMRAW(r) {
+  latestRXMRAW = r;
+  if (!r.measurements) return;
+  for (const m of r.measurements) {
+    if (m.pr_m == null) continue;
+    const key = `${m.gnss_name}-${m.svId}`;
+    if (!prHistory[key]) prHistory[key] = [];
+    prHistory[key].push({ t: r.wall_ns, pr: m.pr_m, cno: m.cno });
+    if (prHistory[key].length > MAX_PR_HIST) prHistory[key].shift();
+  }
+  if (showPR) renderPRPanel();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FIX MARKERS
+// ═══════════════════════════════════════════════════════════════════════
+
+function markerColor(pt) {
+  if (pt.spoof)              return '#ff4444';
+  if (pt.fix === '3D')       return '#00ff88';
+  if (pt.fix === '2D')       return '#ffaa00';
+  return '#4488ff';
+}
+
+function addFixMarker(pt) {
+  if (!map) return;
+  const color = markerColor(pt);
+  const spoofClass = pt.spoof ? ' spoof' : '';
+
+  const tooltipHtml = `
+    <div class="ctw-tooltip${spoofClass}">
+      <b>${pt.wall_iso ? pt.wall_iso.slice(0,23)+'Z' : '?'}</b><br>
+      Lat: ${pt.lat.toFixed(8)}<br>
+      Lon: ${pt.lon.toFixed(8)}<br>
+      Fix: ${pt.fix}  SVs: ${pt.numSV ?? '?'}  PDOP: ${pt.pdop ?? '?'}<br>
+      H-Acc: ${pt.hacc != null ? pt.hacc.toFixed(1)+' m' : '?'}
+      ${pt.spoof ? '<br><b style="color:#ff4444">*** SPOOFING INDICATED ***</b>' : ''}
+    </div>`;
+
+  const circle = L.circleMarker([pt.lat, pt.lon], {
+    radius:      pt.spoof ? 8 : 5,
+    color:       color,
+    fillColor:   color,
+    fillOpacity: 0.85,
+    weight:      pt.spoof ? 2.5 : 1.5,
+  });
+
+  circle.bindTooltip(L.tooltip({ permanent: false, className: '' })
+    .setContent(tooltipHtml));
+
+  circle.addTo(map);
+  markers.push(circle);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SPOOF DISPLAY
+// ═══════════════════════════════════════════════════════════════════════
+
+function updateSpoofDisplay(r) {
+  const spoofEl   = document.getElementById('s-spoof');
+  const panelEl   = document.getElementById('spoof-panel');
+  const detailEl  = document.getElementById('spoof-detail');
+  const hdrWrap   = document.getElementById('hdr-spoof-wrap');
+  const hdrSpoof  = document.getElementById('hdr-spoof');
+
+  const state = r.spoof_state || 'unknown';
+  const active = r.spoofing;
+
+  if (spoofEl) {
+    spoofEl.textContent  = state.toUpperCase();
+    spoofEl.className    = 'mv' + (active ? ' spoof' : '');
+  }
+
+  if (active) {
+    if (panelEl)  panelEl.classList.add('alert');
+    if (hdrWrap)  hdrWrap.style.display = '';
+    if (hdrSpoof) hdrSpoof.textContent  = state.toUpperCase();
+    if (detailEl) {
+      detailEl.innerHTML = `
+        <div class="spoof-row">State     : ${state}</div>
+        <div class="spoof-row">Fix OK    : ${r.gps_fix_ok}</div>
+        <div class="spoof-row">GPS Fix   : ${r.gpsFix}</div>
+        <div class="spoof-row">Wall ISO  : ${r.wall_iso || '?'}</div>
+        <div class="spoof-row">iTOW      : ${r.iTOW}</div>
+      `;
+    }
+  } else {
+    if (panelEl)  panelEl.classList.remove('alert');
+    if (hdrWrap)  hdrWrap.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FIX SIDEBAR
+// ═══════════════════════════════════════════════════════════════════════
+
+function updateFixSidebar(r) {
+  const set = (id, val, cls) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = val;
+    if (cls) el.className = 'mv ' + cls;
+  };
+
+  set('s-fix',  r.fix_name);
+  set('s-lat',  r.lat  != null ? r.lat.toFixed(8)  : '—');
+  set('s-lon',  r.lon  != null ? r.lon.toFixed(8)  : '—');
+  set('s-alt',  r.alt_m != null ? r.alt_m.toFixed(1)+' m' : '—');
+  set('s-hacc', r.h_acc_m != null ? r.h_acc_m.toFixed(1)+' m' : '—');
+  set('s-vacc', r.v_acc_m != null ? r.v_acc_m.toFixed(1)+' m' : '—');
+  set('s-sv',   r.numSV ?? '—');
+  set('s-pdop', r.p_dop != null ? r.p_dop.toFixed(2) : '—');
+  set('s-time', r.wall_iso ? r.wall_iso.slice(0,23)+'Z' : '—');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SKY VIEW
+// ═══════════════════════════════════════════════════════════════════════
+
+function renderSkyView(r) {
+  const canvas = document.getElementById('sky-canvas');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2;
+  const radius = Math.min(W, H)/2 - 8;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Rings
+  ctx.strokeStyle = '#00ff8822';
+  for (const r of [1, 0.66, 0.33]) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // Cardinal labels
+  ctx.fillStyle = '#00ff8844';
+  ctx.font = '9px Courier New';
+  ctx.fillText('N', cx-3,  8);
+  ctx.fillText('S', cx-3,  H-2);
+  ctx.fillText('E', W-10,  cy+4);
+  ctx.fillText('W', 2,     cy+4);
+
+  // Cross hairs
+  ctx.strokeStyle = '#00ff8811';
+  ctx.beginPath(); ctx.moveTo(cx, 0);   ctx.lineTo(cx, H);   ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cy);   ctx.lineTo(W, cy);   ctx.stroke();
+
+  if (!r.sats) return;
+
+  for (const sv of r.sats) {
+    if (sv.elev_deg == null || sv.azim_deg == null) continue;
+    const el  = sv.elev_deg;
+    const az  = sv.azim_deg;
+    const dist = radius * (1 - el / 90);
+    const ang  = (az - 90) * Math.PI / 180;
+    const sx   = cx + dist * Math.cos(ang);
+    const sy   = cy + dist * Math.sin(ang);
+
+    const cno = sv.cno ?? 0;
+    const color = sv.sv_used
+      ? (cno > 35 ? '#00ff88' : cno > 20 ? '#ffaa00' : '#ff4444')
+      : '#444466';
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sv.sv_used ? 5 : 3, 0, Math.PI*2);
+    ctx.fill();
+
+    // SV label
+    ctx.fillStyle = '#ffffffcc';
+    ctx.font = '7px Courier New';
+    ctx.fillText(`${sv.svId}`, sx+4, sy-3);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SATELLITE TABLE
+// ═══════════════════════════════════════════════════════════════════════
+
+function renderSatTable(r) {
+  const list = document.getElementById('sat-list');
+  if (!list || !r.sats) return;
+
+  const sorted = [...r.sats].sort((a,b) => (b.cno??0) - (a.cno??0));
+
+  list.innerHTML = sorted.map(sv => {
+    const cno   = sv.cno ?? 0;
+    const cls   = sv.sv_used ? 'used' : (cno > 0 ? 'unused' : 'weak');
+    const prRes = sv.pr_res_m != null ? sv.pr_res_m.toFixed(1) : '—';
+    return `<div class="sat-row ${cls}">
+      <span>${sv.svId}</span>
+      <span>${sv.gnss_name}</span>
+      <span>${cno}</span>
+      <span>${sv.elev_deg ?? '?'}</span>
+      <span>${sv.azim_deg ?? '?'}</span>
+      <span>${sv.sv_used ? 'Y' : 'n'}</span>
+      <span>${prRes}</span>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PSEUDORANGE PANEL
+// ═══════════════════════════════════════════════════════════════════════
+
+function renderPRPanel() {
+  const panel  = document.getElementById('pr-panel');
+  const canvas = document.getElementById('pr-canvas');
+  const W = canvas.offsetWidth || 276;
+  const H = canvas.offsetHeight || 160;
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const keys = Object.keys(prHistory).filter(k => prHistory[k].length > 1);
+  if (keys.length === 0) return;
+
+  const padL=48, padR=8, padT=16, padB=20;
+  const plotW = W-padL-padR;
+  const plotH = H-padT-padB;
+
+  // Find PR range across all SVs
+  let prMin = Infinity, prMax = -Infinity;
+  for (const k of keys) {
+    for (const p of prHistory[k]) {
+      if (p.pr < prMin) prMin = p.pr;
+      if (p.pr > prMax) prMax = p.pr;
+    }
+  }
+  if (prMax === prMin) prMax = prMin + 1;
+
+  // Grid
+  ctx.strokeStyle = '#00ff8812'; ctx.lineWidth = 1;
+  for (let i=0; i<=4; i++) {
+    const y = padT + (i/4)*plotH;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke();
+    const val = prMax - (i/4)*(prMax-prMin);
+    ctx.fillStyle='#00ff8866'; ctx.font='8px Courier New';
+    ctx.fillText((val/1e6).toFixed(2)+'Mm', 0, y+4);
+  }
+  ctx.strokeStyle='#00ff8844'; ctx.strokeRect(padL,padT,plotW,plotH);
+
+  // Label
+  ctx.fillStyle='#00ff8866'; ctx.font='9px Courier New';
+  ctx.fillText('PSEUDORANGE (Mm)',padL+4,padT+10);
+
+  // Per-SV traces
+  const colors = ['#00ff88','#ffaa00','#ff4444','#4488ff',
+                  '#ff88ff','#88ffff','#ffff44','#ff8844'];
+  keys.forEach((k, ki) => {
+    const pts = prHistory[k];
+    const color = colors[ki % colors.length];
+    const n = pts.length;
+    const tMin = pts[0].t, tMax = pts[n-1].t;
+    const tRange = tMax - tMin || 1;
+
+    ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=1;
+    let first=true;
+    for (const p of pts) {
+      const x = padL + ((p.t - tMin)/tRange)*plotW;
+      const y = padT + plotH - ((p.pr - prMin)/(prMax-prMin))*plotH;
+      if (first) { ctx.moveTo(x,y); first=false; } else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    // SV label at right end
+    ctx.fillStyle=color; ctx.font='8px Courier New';
+    ctx.fillText(k, padL+plotW+2, padT+12+ki*10);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SSE CONNECTION
+// ═══════════════════════════════════════════════════════════════════════
+
+function connect() {
+  setSrc('connecting...');
+  const es = new EventSource(SSE_URL);
+
+  es.onopen = () => {
+    setDot('live');
+    setSrc('SSE connected');
+    lastDataAt = Date.now();
+  };
+
+  es.onmessage = (evt) => {
+    lastDataAt = Date.now();
+    setDot('live');
+    try {
+      const r = JSON.parse(evt.data);
+      switch (r.type) {
+        case 'NAV-PVT':    ingestPVT(r);    break;
+        case 'NAV-STATUS': ingestSTATUS(r); break;
+        case 'NAV-SAT':    ingestSAT(r);    break;
+        case 'NAV-CLOCK':  ingestCLK(r);    break;
+        case 'MON-HW':     ingestHW(r);     break;
+        case 'RXM-RAW':    ingestRXMRAW(r); break;
+      }
+    } catch(e) {
+      console.warn('parse error', e);
+    }
+  };
+
+  es.onerror = () => {
+    setDot('error');
+    setSrc('reconnecting...');
+    es.close();
+    setTimeout(connect, 3000);
+  };
+
+  // Stale watchdog
+  staleTimer = setInterval(() => {
+    if (Date.now() - lastDataAt > STALE_MS) setDot('stale');
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+
+function setDot(state) {
+  const dot = document.getElementById('live-dot');
+  dot.className = 'dot';
+  if (state === 'live')  dot.classList.add('live');
+  if (state === 'stale') dot.classList.add('stale');
+  if (state === 'error') dot.classList.add('error');
+}
+
+function setSrc(msg) {
+  document.getElementById('src-status').textContent = msg;
+}
+
+// ── Toggle buttons ───────────────────────────────────────────────────
+
+document.getElementById('btn-track').addEventListener('click', function() {
+  showTrack = !showTrack;
+  this.textContent = 'TRACK ' + (showTrack ? 'ON' : 'OFF');
+  this.classList.toggle('active', showTrack);
+  if (trackLine) {
+    if (showTrack) {
+      trackLine.setLatLngs(trackPoints.map(p => [p.lat, p.lon]));
+    } else {
+      trackLine.setLatLngs([]);
+    }
+  }
+});
+
+document.getElementById('btn-pr').addEventListener('click', function() {
+  showPR = !showPR;
+  this.textContent = 'PSEUDORANGES ' + (showPR ? 'ON' : 'OFF');
+  this.classList.toggle('active', showPR);
+  const panel = document.getElementById('pr-panel');
+  panel.classList.toggle('visible', showPR);
+  if (showPR) renderPRPanel();
+});
+
+document.getElementById('btn-towers').addEventListener('click', function() {
+  showTowers = !showTowers;
+  this.textContent = 'TOWERS ' + (showTowers ? 'ON' : 'OFF');
+  this.classList.toggle('active', showTowers);
+});
+
+document.getElementById('btn-follow').addEventListener('click', function() {
+  followMode = !followMode;
+  this.textContent = 'FOLLOW ' + (followMode ? 'ON' : 'OFF');
+  this.classList.toggle('active', followMode);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════════════════════
+
+connect();
+</script>
+</body>
+</html>

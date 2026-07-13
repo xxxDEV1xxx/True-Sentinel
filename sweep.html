@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CTW RF Forensic Monitor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    color: #00ff88;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    overflow-x: hidden;
+  }
+
+  #header {
+    background: #0d0d1a;
+    border-bottom: 1px solid #00ff8844;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  #header .title {
+    color: #00ff88;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    white-space: nowrap;
+  }
+
+  #header .status-group {
+    display: flex;
+    gap: 24px;
+    font-size: 11px;
+    flex-wrap: wrap;
+  }
+/* ── correlation panel ── */
+  #corr-panel {
+    grid-column: 1;
+    grid-row: 4;
+    background: #0a0a0f;
+    border-top: 1px solid #ff440022;
+    position: relative;
+    overflow: hidden;
+    height: 140px;
+  }
+
+  #corr-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #header .stat { color: #88ffcc; }
+  #header .stat span { color: #ffffff; font-weight: bold; }
+  #header .anomaly-count { color: #ff4444; font-weight: bold; }
+
+  #header .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #333;
+    margin-right: 6px;
+  }
+
+  #header .dot.live {
+    background: #00ff88;
+    box-shadow: 0 0 6px #00ff88;
+    animation: pulse 1s infinite;
+  }
+
+  #header .dot.stale  { background: #ffaa00; box-shadow: 0 0 4px #ffaa00; }
+  #header .dot.error  { background: #ff4444; box-shadow: 0 0 4px #ff4444; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* ── source selector ── */
+  #source-bar {
+    background: #0d0d1a;
+    border-bottom: 1px solid #00ff8822;
+    padding: 4px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 10px;
+  }
+
+  #source-bar label { color: #00ff8866; letter-spacing: 1px; }
+
+  #source-bar select {
+    background: #0a0a0f;
+    color: #00ff88;
+    border: 1px solid #00ff8844;
+    padding: 2px 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+  }
+
+  #source-bar button {
+    background: #0a0a0f;
+    color: #00ff88;
+    border: 1px solid #00ff8844;
+    padding: 2px 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  #source-bar button:hover { background: #00ff8822; }
+
+  #source-bar .src-status {
+    color: #668877;
+    margin-left: 8px;
+  }
+
+  #source-bar .lag-display {
+    color: #ffaa00;
+    margin-left: auto;
+  }
+
+  /* ── main grid ── */
+#main {
+    display: grid;
+    grid-template-rows: 320px 160px 160px 140px;
+    grid-template-columns: 1fr 296px;
+    gap: 1px;
+    background: #111;
+    height: calc(100vh - 72px);
+}
+
+  .panel {
+    background: #0a0a0f;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel-label {
+    position: absolute;
+    top: 6px; left: 10px;
+    font-size: 10px;
+    color: #00ff8866;
+    letter-spacing: 1px;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  #spectrum-panel  { grid-column: 1; grid-row: 1; }
+  #waterfall-panel { grid-column: 1; grid-row: 2; }
+  #timeseries-panel{ grid-column: 1; grid-row: 3; }
+
+  #spectrum-canvas, #waterfall-canvas, #timeseries-canvas {
+    display: block; width: 100%; height: 100%;
+  }
+
+  /* ── sidebar ── */
+  #sidebar {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    background: #0d0d1a;
+    border-left: 1px solid #00ff8822;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-section {
+    border-bottom: 1px solid #00ff8822;
+    padding: 8px 12px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-section h3 {
+    font-size: 10px;
+    color: #00ff8866;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+
+  .metric-label { color: #668877; }
+  .metric-value { color: #ffffff; font-weight: bold; }
+  .metric-value.hot  { color: #ff4444; }
+  .metric-value.warm { color: #ffaa00; }
+  .metric-value.cold { color: #00ff88; }
+
+  /* ── freq table ── */
+  .freq-list-header {
+    display: grid;
+    grid-template-columns: 78px 46px 46px 50px;
+    gap: 2px;
+    padding: 3px 12px 4px;
+    font-size: 9px;
+    color: #00ff8844;
+    border-bottom: 1px solid #00ff8822;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+  }
+
+  #freq-list-wrap {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  #freq-list-wrap::-webkit-scrollbar { width: 4px; }
+  #freq-list-wrap::-webkit-scrollbar-track { background: #0a0a0f; }
+  #freq-list-wrap::-webkit-scrollbar-thumb { background: #00ff8844; border-radius: 2px; }
+
+  .freq-entry {
+    display: grid;
+    grid-template-columns: 78px 46px 46px 50px;
+    gap: 2px;
+    padding: 2px 12px;
+    font-size: 10px;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+  }
+
+  .freq-entry:hover  { background: #00ff8811; }
+  .freq-entry.selected { border-left-color: #ffffff66; background: #00ff8818; }
+  .freq-entry.anomaly  { border-left-color: #ff4444;   background: #ff000011; }
+
+  .freq-entry .fe-freq  { color: #88ffcc; }
+  .freq-entry .fe-dbfs  { color: #aaffdd; }
+  .freq-entry .fe-cf    { color: #ffcc44; }
+  .freq-entry .fe-atten { color: #8899ff; }
+
+  /* ── event log ── */
+  .event-log-wrap {
+    height: 120px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .event-log-wrap::-webkit-scrollbar { width: 4px; }
+  .event-log-wrap::-webkit-scrollbar-track { background: #0a0a0f; }
+  .event-log-wrap::-webkit-scrollbar-thumb { background: #ff444444; }
+
+  .event-entry {
+    padding: 2px 12px;
+    font-size: 10px;
+    color: #ff8844;
+    border-left: 2px solid #ff4444;
+    margin: 1px 0;
+  }
+
+  .event-entry .ev-time { color: #ff4444; margin-right: 6px; }
+  .event-entry .ev-freq { color: #ffaa44; }
+
+  /* ── parse error toast ── */
+  #err-toast {
+    position: fixed;
+    bottom: 12px; right: 12px;
+    background: #200000;
+    border: 1px solid #ff4444;
+    color: #ff8888;
+    font-size: 10px;
+    padding: 6px 12px;
+    border-radius: 3px;
+    display: none;
+    z-index: 9999;
+    max-width: 320px;
+    word-break: break-all;
+  }
+
+  canvas { image-rendering: pixelated; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div id="header">
+  <div class="title"><span class="dot" id="live-dot"></span>CTW RF FORENSIC MONITOR</div>
+  <div class="status-group">
+    <div class="stat">FREQ RANGE <span id="hdr-range">—</span></div>
+    <div class="stat">SWEEP <span id="hdr-sweep">#0</span></div>
+    <div class="stat">RECORDS <span id="hdr-records">0</span></div>
+    <div class="stat">ANOMALIES <span class="anomaly-count" id="hdr-anomalies">0</span></div>
+    <div class="stat">MODE <span id="hdr-mode">—</span></div>
+    <div class="stat">LAST <span id="hdr-time">—</span></div>
+  </div>
+</div>
+
+<!-- ── Source selector bar ── -->
+<div id="source-bar">
+  <label>SOURCE</label>
+  <select id="src-select">
+    <option value="sse">SSE  /sse  (rf_server.py)</option>
+    <option value="poll">POLL /sweep (live_reader.py)</option>
+    <option value="demo">DEMO (synthetic)</option>
+  </select>
+  <button id="btn-connect">CONNECT</button>
+  <span class="src-status" id="src-status">idle</span>
+  <span class="lag-display" id="lag-display"></span>
+</div>
+
+<!-- ── Main grid ── -->
+<div id="main">
+
+  <div class="panel" id="spectrum-panel">
+    <div class="panel-label">SPECTRUM — dBFS / PEAK / CF OVERLAY</div>
+    <canvas id="spectrum-canvas"></canvas>
+  </div>
+
+  <div class="panel" id="waterfall-panel">
+    <div class="panel-label">WATERFALL — dBFS POWER HISTORY</div>
+    <canvas id="waterfall-canvas"></canvas>
+  </div>
+
+  <div class="panel" id="timeseries-panel">
+    <div class="panel-label">TIME SERIES — CF (yellow) / ATTEN (blue) / RMS (green)</div>
+    <canvas id="timeseries-canvas"></canvas>
+  </div>
+  <div class="panel" id="corr-panel">
+      <div class="panel-label">GEIGER/RF CORRELATION — SPIKE (red) / CORR (magenta) / RF_ONLY (cyan) / DR baseline (orange)</div>
+      <canvas id="corr-canvas"></canvas>
+  </div>
+  <div id="sidebar">
+
+    <div class="sidebar-section">
+      <h3>Current Measurement</h3>
+      <div class="metric-row"><span class="metric-label">FREQUENCY</span> <span class="metric-value" id="s-freq">—</span></div>
+      <div class="metric-row"><span class="metric-label">dBFS</span>      <span class="metric-value" id="s-dbfs">—</span></div>
+      <div class="metric-row"><span class="metric-label">PEAK dBFS</span> <span class="metric-value" id="s-peak">—</span></div>
+      <div class="metric-row"><span class="metric-label">RMS</span>       <span class="metric-value" id="s-rms">—</span></div>
+      <div class="metric-row"><span class="metric-label">CREST FACTOR</span><span class="metric-value" id="s-cf">—</span></div>
+      <div class="metric-row"><span class="metric-label">ATTEN dB</span>  <span class="metric-value" id="s-atten">—</span></div>
+      <div class="metric-row"><span class="metric-label">IQ FRAMES</span> <span class="metric-value" id="s-iq">—</span></div>
+      <div class="metric-row"><span class="metric-label">TIMESTAMP</span> <span class="metric-value" id="s-time">—</span></div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Session Stats</h3>
+      <div class="metric-row"><span class="metric-label">dBFS MIN</span>   <span class="metric-value cold" id="ss-dbfs-min">—</span></div>
+      <div class="metric-row"><span class="metric-label">dBFS MAX</span>   <span class="metric-value hot"  id="ss-dbfs-max">—</span></div>
+      <div class="metric-row"><span class="metric-label">PEAK MAX</span>   <span class="metric-value hot"  id="ss-peak-max">—</span></div>
+      <div class="metric-row"><span class="metric-label">CF MAX</span>     <span class="metric-value warm" id="ss-cf-max">—</span></div>
+      <div class="metric-row"><span class="metric-label">ATTEN MIN</span>  <span class="metric-value warm" id="ss-atten-min">—</span></div>
+      <div class="metric-row"><span class="metric-label">NOISE FLOOR</span><span class="metric-value cold" id="ss-floor">—</span></div>
+      <div class="metric-row"><span class="metric-label">SESSION START</span><span class="metric-value" id="ss-start" style="font-size:9px">—</span></div>
+    </div>
+    <div class="metric-row">
+        <span class="metric-label">CORR EVENTS</span>
+        <span class="metric-value hot" id="ss-corr">0</span>
+    </div>
+    <div class="metric-row">
+        <span class="metric-label">SPIKE ONLY</span>
+        <span class="metric-value warm" id="ss-spike">0</span>
+    </div>
+    <div class="metric-row">
+        <span class="metric-label">DR CURRENT</span>
+        <span class="metric-value" id="ss-dr">—</span>
+    </div>
+    <div class="metric-row">
+        <span class="metric-label">CPM</span>
+        <span class="metric-value" id="ss-cpm">—</span>
+    </div>
+    <div class="sidebar-section" style="padding-bottom:4px; flex-shrink:0;">
+      <h3>Frequency Table</h3>
+      <div class="freq-list-header">
+        <span>FREQ</span><span>dBFS</span><span>CF</span><span>ATTEN</span>
+      </div>
+    </div>
+    <div id="freq-list-wrap"><div id="freq-list"></div></div>
+
+    <div class="sidebar-section" style="padding-bottom:4px; flex-shrink:0;">
+      <h3>Anomaly Log</h3>
+    </div>
+    <div class="event-log-wrap"><div id="event-log"></div></div>
+
+  </div>
+</div>
+
+<div id="err-toast"></div>
+
+<script>
+"use strict";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART 3 — LIVE RUNTIME INGESTION
+// Cursor-based reader for runtime/sweep_live.jsonl via live_reader.py (:8080)
+// and SSE stream via rf_server.py (:8000/sse).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Configuration ──────────────────────────────────────────────────────────
+
+const CFG = {
+  SSE_URL:       '/sse',          // rf_server.py  — EventSource
+  POLL_URL:      '/sweep',        // live_reader.py — cursor poll
+  POLL_INTERVAL_MS: 300,          // poll cadence when live_reader is source
+  STALE_TIMEOUT_MS: 5000,         // dot goes stale after this silence
+  ERROR_TOAST_MS:   4000,
+  WATERFALL_ROWS:   120,
+  TS_MAX:           600,
+  ANOMALY_LOG_MAX:  50,
+  NOISE_PERCENTILE: 0.30,         // bottom 30th percentile = noise floor
+};
+
+// ── OOB Guard — length provenance (patent 19/466,387) ──────────────────────
+// All external data lengths are clamped before use. No external size value
+// is trusted for array allocation or loop bounds without passing through here.
+
+const _OOB = {
+  MAX_LINE_BYTES:    4096,    // single JSONL line
+  MAX_RECORDS_BURST: 5000,    // max lines parsed per poll tick
+  MAX_FREQ_ENTRIES:  4096,    // freq map hard cap
+  MAX_ANOMALY_LOG:   50,
+  MAX_TS_HISTORY:    600,
+  MAX_WATERFALL_ROWS:120,
+};
+
+function oobClamp(val, lo, hi, label) {
+  const v = Number(val);
+  if (!isFinite(v)) {
+    console.warn(`[OOB_GUARD] ${label} non-finite, clamped to ${lo}`);
+    return lo;
+  }
+  if (v < lo) { console.warn(`[OOB_GUARD] ${label} ${v} < ${lo}, clamped`); return lo; }
+  if (v > hi) { console.warn(`[OOB_GUARD] ${label} ${v} > ${hi}, clamped`); return hi; }
+  return v;
+}
+
+// ── Data store ─────────────────────────────────────────────────────────────
+
+const freqMap   = new Map();   // freq_hz → entry object
+const freqOrder = [];          // sorted ascending
+
+const tsHistory     = [];      // global time series [{t,freq,dbfs,cf,atten,rms,anomaly}]
+const waterfallBuf  = [];      // array of Float32Array rows
+
+let sessionStats = {
+  dbfsMin:  Infinity,
+  dbfsMax: -Infinity,
+  peakMax: -Infinity,
+  cfMax:   -Infinity,
+  attenMin: Infinity,
+  startISO: null,
+};
+
+let sweepCount   = 0;
+let recordCount  = 0;
+let anomalyCount = 0;
+let selectedFreq = null;
+
+// Parse-error tracking
+let parseErrors  = 0;
+let lastToastTimer = null;
+
+// ── Cursor engine ───────────────────────────────────────────────────────────
+// Tracks byte offset into sweep_live.jsonl so each poll only reads new data.
+// This is the core of Part 3: we never re-parse lines we've already consumed.
+
+const CURSOR = {
+  byteOffset: 0,       // bytes consumed so far (Content-Length confirmed)
+  lineCount:  0,       // total lines successfully parsed
+  sweepSeen:  new Set(),
+};
+
+// ── Transport state ─────────────────────────────────────────────────────────
+
+let activeSource = null;   // 'sse' | 'poll' | 'demo'
+let sseHandle    = null;
+let pollHandle   = null;
+let demoHandle   = null;
+let lastDataAt   = 0;
+let staleHandle  = null;
+
+// ── PSN sanitizer (lightweight, per patent taxonomy) ───────────────────────
+// VALIDATED | CLAMPED | REJECTED — applied to each numeric field on ingest.
+
+function psnNum(val, lo, hi, field) {
+  if (val === null || val === undefined) return null;
+  const v = Number(val);
+  if (!isFinite(v))          { return null; }           // REJECTED
+  if (v < lo || v > hi)      { return oobClamp(v, lo, hi, field); } // CLAMPED
+  return v;                                              // VALIDATED
+}
+
+function psnStr(val, maxLen) {
+  if (typeof val !== 'string') return null;
+  // Strip RTLO, BiDi, zero-width per unicode_guard discipline
+  const stripped = val
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')  // BiDi
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')           // ZW / BOM
+    .slice(0, oobClamp(maxLen, 0, _OOB.MAX_LINE_BYTES, 'psnStr.maxLen'));
+  return stripped;
+}
+
+// ── Record parser ───────────────────────────────────────────────────────────
+// Parses one raw JSON object from the JSONL stream into a validated entry.
+// Returns null for non-measurement records (headers, sweep_pass_end, etc.).
+
+function parseRecord(raw) {
+  // Skip structural / meta records — they carry no freq data
+  if (!raw.freq_hz) return null;
+  if (raw.type === 'sweep_pass_end' ||
+      raw.type === 'sweep_summary'  ||
+      raw.type === 'session_end'    ||
+      raw.type === 'set_error'      ||
+      raw.type === 'sweep_abort'    ||
+      raw.type === 'forensic_session_header') return null;
+
+  const freq = psnNum(raw.freq_hz, 70e6, 6e9, 'freq_hz');
+  if (freq === null) return null;
+
+  return {
+    freq_hz:        freq,
+    sweep:          psnNum(raw.sweep,          0,    1e7,  'sweep')    ?? 0,
+    dbfs:           psnNum(raw.dbfs,          -200,  10,   'dbfs'),
+    peak_dbfs:      psnNum(raw.peak_dbfs,     -200,  10,   'peak_dbfs'),
+    rms:            psnNum(raw.rms,            0,    1e6,  'rms'),
+    crest_factor:   psnNum(raw.crest_factor,   0,    1e4,  'cf'),
+    rssi_atten_db:  psnNum(raw.rssi_atten_db,  0,    200,  'atten'),
+    iq_frames:      psnNum(raw.iq_frames,       0,    1e12, 'iq_frames'),
+    anomaly:        !!raw.anomaly,
+    wall_iso:       psnStr(raw.wall_iso,        32) || null,
+    wall_ns:        psnNum(raw.wall_ns,         0,    2e18, 'wall_ns'),
+    rx_port:        psnStr(raw.rx_port,         8) || null,
+  };
+}
+
+// ── Ingest one validated record into the data store ─────────────────────────
+
+function ingestRecord(r) {
+  if (!r) return;
+
+  const freq = r.freq_hz;
+// ═══════════════════════════════════════════════════════════════════════════
+// GEIGER / RF CORRELATION ENGINE — CLIENT SIDE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const corrCanvas = document.getElementById('corr-canvas');
+
+// Correlation data store
+const CORR = {
+    events:     [],     // all corr events, time-ordered
+    serial:     [],     // DR baseline readings
+    maxEvents:  500,
+    drCurrent:  null,
+    cpmCurrent: null,
+    corrCount:  0,
+    spikeCount: 0,
+    rfOnlyCount:0,
+};
+
+// ── Ingest a correlation stream record ─────────────────────────────────────
+
+function ingestCorrRecord(r) {
+    const type = r.type;
+
+    if (type === "SERIAL") {
+        // Baseline DR reading — push to serial history
+        CORR.drCurrent  = r.dr;
+        CORR.cpmCurrent = r.cpm;
+        CORR.serial.push({ wall_ns: r.event_wall_ns, dr: r.dr, cpm: r.cpm });
+        if (CORR.serial.length > CORR.maxEvents) CORR.serial.shift();
+        updateGeigerSidebar();
+        return;
+    }
+
+    if (type === "CORR" || type === "SPIKE_ONLY" || type === "RF_ONLY") {
+        const ev = {
+            type:     type,
+            wall_ns:  r.event_wall_ns,
+            wall_iso: r.event_wall_iso,
+            dr:       r.dr       ?? null,
+            cpm:      r.cpm      ?? null,
+            freq_hz:  r.rf_freq_hz ?? null,
+            dbfs:     r.rf_dbfs  ?? null,
+            cf:       r.rf_cf    ?? null,
+            dt_ms:    r.rf_dt_ms ?? null,
+            audio_burst: r.audio_burst ?? false,
+            audio_1s:   r.audio_pulses_1s ?? 0,
+        };
+        CORR.events.push(ev);
+        if (CORR.events.length > CORR.maxEvents) CORR.events.shift();
+
+        if (type === "CORR")       { CORR.corrCount++;   }
+        if (type === "SPIKE_ONLY") { CORR.spikeCount++;  }
+        if (type === "RF_ONLY")    { CORR.rfOnlyCount++; }
+
+        if (r.dr != null) { CORR.drCurrent = r.dr; CORR.cpmCurrent = r.cpm; }
+
+        addCorrAnomalyEvent(ev);
+        updateGeigerSidebar();
+        renderDirty = true;
+    }
+}
+
+// ── Wire SSE to corr ingestor ──────────────────────────────────────────────
+// Patch the existing SSE onmessage to route by _stream tag
+
+const _origSSEConnect = connectSSE;
+connectSSE = function() {
+    if (sseHandle) { try { sseHandle.close(); } catch(_) {} }
+    setSrcStatus('connecting…');
+    const es = new EventSource(CFG.SSE_URL);
+    sseHandle = es;
+
+    es.onopen = () => { setDotState('live'); setSrcStatus('SSE · connected'); };
+
+    es.onmessage = (evt) => {
+        if (evt.data.length > _OOB.MAX_LINE_BYTES) return;
+        try {
+            const raw = JSON.parse(evt.data);
+            // Route by stream tag injected by rf_server.py
+            if (raw._stream === 'corr') {
+                ingestCorrRecord(raw);
+            } else {
+                // Default RF path
+                const rec = parseRecord(raw);
+                ingestRecord(rec);
+            }
+        } catch(e) {
+            parseErrors++;
+            showParseError(e.message);
+        }
+    };
+
+    es.onerror = () => {
+        setDotState('error');
+        setSrcStatus('SSE · reconnecting…');
+        es.close();
+        setTimeout(() => { if (activeSource === 'sse') connectSSE(); }, 3000);
+    };
+};
+
+// ── Sidebar updates ────────────────────────────────────────────────────────
+
+function updateGeigerSidebar() {
+    const drEl = document.getElementById('ss-dr');
+    if (CORR.drCurrent != null) {
+        drEl.textContent = CORR.drCurrent.toFixed(4) + ' µSv/h';
+        drEl.className = 'metric-value';
+        if      (CORR.drCurrent >= 0.20) drEl.classList.add('hot');
+        else if (CORR.drCurrent >= 0.10) drEl.classList.add('warm');
+        else                             drEl.classList.add('cold');
+    }
+    const cpmEl = document.getElementById('ss-cpm');
+    if (CORR.cpmCurrent != null) cpmEl.textContent = CORR.cpmCurrent;
+
+    document.getElementById('ss-corr').textContent  = CORR.corrCount;
+    document.getElementById('ss-spike').textContent = CORR.spikeCount;
+}
+
+// ── Anomaly log entry ──────────────────────────────────────────────────────
+
+function addCorrAnomalyEvent(ev) {
+    const log = document.getElementById('event-log');
+    const el  = document.createElement('div');
+    el.className = 'event-entry';
+    const t = ev.wall_iso ? ev.wall_iso.slice(11,19) : '—';
+    const f = ev.freq_hz  ? (ev.freq_hz/1e6).toFixed(3)+' MHz' : '—';
+    const badge =
+        ev.type==='CORR'       ? '⚡CORR'  :
+        ev.type==='SPIKE_ONLY' ? '☢ SPIKE' :
+                                  '📡RF';
+    el.innerHTML =
+        `<span class="ev-time">${t}</span>` +
+        `<span class="ev-freq">${badge}</span> ` +
+        `DR=${ev.dr!=null?ev.dr.toFixed(3):'—'} ` +
+        `RF=${f} CF=${ev.cf!=null?ev.cf.toFixed(0):'—'}`;
+    log.prepend(el);
+    while (log.children.length > _OOB.MAX_ANOMALY_LOG) log.removeChild(log.lastChild);
+}
+
+// ── Correlation canvas draw ────────────────────────────────────────────────
+
+function drawCorrPanel() {
+    fitCanvas(corrCanvas);
+    const W = corrCanvas.width, H = corrCanvas.height;
+    const ctx = corrCanvas.getContext('2d');
+    ctx.clearRect(0,0,W,H);
+
+    const padL=52, padR=12, padT=18, padB=20;
+    const plotW=W-padL-padR, plotH=H-padT-padB;
+
+    // ── Grid ──
+    ctx.strokeStyle='#ff440010'; ctx.lineWidth=1;
+    for(let t=0;t<=4;t++){
+        const y=padT+(t/4)*plotH;
+        ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke();
+    }
+    ctx.strokeStyle='#ff440033'; ctx.strokeRect(padL,padT,plotW,plotH);
+
+    // ── Time axis: last N seconds ──────────────────────────────────────
+    const nowNs   = Date.now() * 1e6;   // approximate — just for x-axis
+    const spanNs  = 120 * 1e9;          // show last 120 seconds
+    const xFromNs = (ns) => padL + ((ns - (nowNs - spanNs)) / spanNs) * plotW;
+
+    // Time tick marks
+    ctx.fillStyle='#ff440044'; ctx.font='8px Courier New';
+    for(let s=0;s<=120;s+=30){
+        const x = padL + (s/120)*plotW;
+        ctx.beginPath(); ctx.strokeStyle='#ff440022';
+        ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+        ctx.fillText(`-${120-s}s`, x-8, padT+plotH+14);
+    }
+
+    // ── DR baseline trace (orange, bottom 60% of panel) ───────────────
+    if(CORR.serial.length >= 2){
+        // Find DR range
+        const drs = CORR.serial.map(r=>r.dr);
+        const drMax = Math.max(...drs, 0.02);
+
+        ctx.beginPath(); ctx.strokeStyle='#ff880055'; ctx.lineWidth=1;
+        let first=true;
+        for(const r of CORR.serial){
+            const x = xFromNs(r.wall_ns);
+            if(x < padL || x > padL+plotW) continue;
+            // Map DR to bottom 55% of plot
+            const y = padT + plotH - (r.dr / drMax) * plotH * 0.55;
+            if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+
+        // DR scale label
+        ctx.fillStyle='#ff8800'; ctx.font='8px Courier New';
+        ctx.fillText(`${drMax.toFixed(3)}µ`, 0, padT+plotH*0.45+4);
+        ctx.fillText('0', 4, padT+plotH+4);
+    }
+
+    // ── Event markers ──────────────────────────────────────────────────
+    for(const ev of CORR.events){
+        const x = xFromNs(ev.wall_ns);
+        if(x < padL || x > padL+plotW) continue;
+
+        if(ev.type === 'CORR'){
+            // Tall magenta bar — most significant event
+            ctx.strokeStyle='#ff00ff';
+            ctx.lineWidth=2;
+            ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+
+            // CF magnitude dot at top
+            if(ev.cf != null){
+                const cfH = Math.min(plotH*0.9, (ev.cf/150)*plotH);
+                ctx.fillStyle='#ff00ffcc';
+                ctx.beginPath();
+                ctx.arc(x, padT+plotH-cfH, 3, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            // Δt annotation
+            if(ev.dt_ms != null){
+                ctx.fillStyle='#ff88ff'; ctx.font='7px Courier New';
+                ctx.fillText(`${ev.dt_ms>0?'+':''}${ev.dt_ms.toFixed(0)}ms`, x+2, padT+12);
+            }
+
+        } else if(ev.type === 'SPIKE_ONLY'){
+            // Red spike bar — Geiger with no RF match
+            ctx.strokeStyle='#ff4444cc';
+            ctx.lineWidth=1.5;
+            ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+            ctx.fillStyle='#ff4444'; ctx.font='8px Courier New';
+            ctx.fillText('☢', x-4, padT+10);
+
+        } else if(ev.type === 'RF_ONLY'){
+            // Cyan tick — RF anomaly with no Geiger match
+            ctx.strokeStyle='#00ccff88';
+            ctx.lineWidth=1;
+            ctx.beginPath(); ctx.moveTo(x,padT+plotH*0.6); ctx.lineTo(x,padT+plotH); ctx.stroke();
+        }
+    }
+
+    // ── Legend ─────────────────────────────────────────────────────────
+    ctx.font='9px Courier New';
+    ctx.fillStyle='#ff00ff'; ctx.fillText('│ CORR',   padL+4,  padT+12);
+    ctx.fillStyle='#ff4444'; ctx.fillText('│ SPIKE',  padL+56, padT+12);
+    ctx.fillStyle='#00ccff'; ctx.fillText('│ RF_ONLY',padL+110,padT+12);
+    ctx.fillStyle='#ff8800'; ctx.fillText('─ DR',     padL+178,padT+12);
+
+    // ── Current DR readout ─────────────────────────────────────────────
+    if(CORR.drCurrent != null){
+        const color = CORR.drCurrent >= 0.20 ? '#ff4444' :
+                      CORR.drCurrent >= 0.10 ? '#ffaa00' : '#88ff88';
+        ctx.fillStyle=color;
+        ctx.font='bold 11px Courier New';
+        ctx.fillText(
+            `DR: ${CORR.drCurrent.toFixed(4)} µSv/h  CPM: ${CORR.cpmCurrent??'—'}`,
+            padL+4, padT+plotH-6
+        );
+    }
+}
+
+// Hook into render loop — add corr panel draw
+const _origRenderFrame = renderFrame;
+// Patch: call drawCorrPanel inside the existing rAF loop
+// We do this by wrapping the renderDirty block:
+// (Since renderFrame is defined as a named function, we override it)
+
+// Store the original and redefine
+const _baseRenderFrame = window.renderFrame || null;
+
+// Cancel the existing rAF loop and restart with corr panel included
+cancelAnimationFrame(window._rafHandle);
+
+    function renderFrame() {
+        if(recordCount !== _lastRecordCount){
+            _lastRecordCount = recordCount;
+            renderDirty = true;
+            freqListDirty = true;
+            reclassifyAnomalies();
+        }
+
+        if(renderDirty){
+            renderDirty=false;
+            drawSpectrum();
+            drawWaterfall();
+            drawTimeSeries();
+            drawCorrPanel();      // ← added
+            updateHeader();
+            updateSidebarCurrent(selectedFreq ? freqMap.get(selectedFreq) : [...freqMap.values()].pop());
+        }
+
+        statsTick++;
+        if(statsTick>=STATS_CADENCE){
+            statsTick=0;
+            rebuildFreqList();
+            updateSessionStats();
+    }
+
+        window._rafHandle = requestAnimationFrame(renderFrame);
+    }
+
+    window._rafHandle = requestAnimationFrame(renderFrame);
+  // Hard cap on frequency map size (OOB guard)
+  if (!freqMap.has(freq)) {
+    if (freqMap.size >= _OOB.MAX_FREQ_ENTRIES) return; // REJECTED
+    freqOrder.push(freq);
+    freqOrder.sort((a, b) => a - b);
+  }
+
+  freqMap.set(freq, r);
+  recordCount++;
+
+  // Waterfall: push a new row each time we roll to a new sweep pass
+  if (r.sweep > sweepCount) {
+    sweepCount = r.sweep;
+    pushWaterfallRow();
+  }
+
+  // Session stats
+  if (r.dbfs          != null) { sessionStats.dbfsMin = Math.min(sessionStats.dbfsMin, r.dbfs);         sessionStats.dbfsMax = Math.max(sessionStats.dbfsMax, r.dbfs); }
+  if (r.peak_dbfs     != null)   sessionStats.peakMax  = Math.max(sessionStats.peakMax,  r.peak_dbfs);
+  if (r.crest_factor  != null)   sessionStats.cfMax    = Math.max(sessionStats.cfMax,    r.crest_factor);
+  if (r.rssi_atten_db != null)   sessionStats.attenMin = Math.min(sessionStats.attenMin, r.rssi_atten_db);
+  if (!sessionStats.startISO && r.wall_iso) sessionStats.startISO = r.wall_iso;
+
+  // Time series (bounded)
+  tsHistory.push({ t: Date.now(), freq, dbfs: r.dbfs, cf: r.crest_factor, atten: r.rssi_atten_db, rms: r.rms, anomaly: r.anomaly });
+  if (tsHistory.length > _OOB.MAX_TS_HISTORY) tsHistory.shift();
+
+  // Anomaly
+  if (r.anomaly) {
+    anomalyCount++;
+    addAnomalyEvent(r);
+  }
+
+  // Stale watchdog reset
+  lastDataAt = Date.now();
+  setDotState('live');
+}
+
+// ── JSONL burst parser ───────────────────────────────────────────────────────
+// Parses a string of JSONL text (possibly many lines).
+// Respects OOB burst limit to prevent UI lockup on large backlogs.
+
+function parseJSONLBurst(text) {
+  const lines = text.split('\n');
+  const limit = oobClamp(lines.length, 0, _OOB.MAX_RECORDS_BURST, 'burst.lines');
+  let parsed = 0;
+
+  for (let i = 0; i < limit; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // OOB: reject oversized lines before parsing
+    if (line.length > _OOB.MAX_LINE_BYTES) {
+      console.warn(`[OOB_GUARD] Line ${i} length ${line.length} exceeds MAX_LINE_BYTES, skipped`);
+      parseErrors++;
+      continue;
+    }
+
+    try {
+      const raw = JSON.parse(line);
+      const rec = parseRecord(raw);
+      if (rec) { ingestRecord(rec); parsed++; }
+    } catch (e) {
+      parseErrors++;
+      showParseError(`line ${CURSOR.lineCount + i}: ${e.message}`);
+    }
+  }
+
+  CURSOR.lineCount += limit;
+  return parsed;
+}
+
+// ── POLL transport (live_reader.py on :8080) ─────────────────────────────────
+// Uses HTTP Range header to implement a cursor — only new bytes are fetched
+// each tick. If the server doesn't support Range, falls back to full-read with
+// client-side line skipping via CURSOR.lineCount.
+
+async function pollTick() {
+  try {
+    const headers = {};
+    if (CURSOR.byteOffset > 0) {
+      headers['Range'] = `bytes=${CURSOR.byteOffset}-`;
+    }
+
+    const res = await fetch(CFG.POLL_URL, { headers, cache: 'no-store' });
+
+    if (res.status === 416) {
+      // Range Not Satisfiable — no new data, file may have rotated
+      return;
+    }
+
+    if (!res.ok) {
+      setDotState('error');
+      setSrcStatus(`HTTP ${res.status}`);
+      return;
+    }
+
+    const text = await res.text();
+    if (!text) return;
+
+    const isPartial = (res.status === 206);
+
+    if (isPartial) {
+      // Server honoured Range — only new bytes
+      const newBytes = new TextEncoder().encode(text).length;
+      CURSOR.byteOffset += newBytes;
+      parseJSONLBurst(text);
+    } else {
+      // Full response — skip already-seen lines by line count
+      const lines = text.split('\n');
+      const newLines = lines.slice(CURSOR.lineCount);
+      if (newLines.length > 0) {
+        parseJSONLBurst(newLines.join('\n'));
+      }
+      // Advance byte offset estimate
+      CURSOR.byteOffset = new TextEncoder().encode(text).length;
+    }
+
+    setSrcStatus('poll · ok');
+    updateLagDisplay();
+
+  } catch (e) {
+    setDotState('error');
+    setSrcStatus(`poll err: ${e.message}`);
+  }
+}
+
+// ── SSE transport (rf_server.py on :8000) ────────────────────────────────────
+
+function connectSSE() {
+  if (sseHandle) { try { sseHandle.close(); } catch(_) {} }
+
+  setSrcStatus('connecting…');
+  const es = new EventSource(CFG.SSE_URL);
+  sseHandle = es;
+
+  es.onopen = () => {
+    setDotState('live');
+    setSrcStatus('SSE · connected');
+  };
+
+  es.onmessage = (evt) => {
+    // Each SSE message is a single JSON object from rf_server.py's tail_file()
+    if (evt.data.length > _OOB.MAX_LINE_BYTES) {
+      console.warn('[OOB_GUARD] SSE message exceeds MAX_LINE_BYTES, dropped');
+      return;
+    }
+    try {
+      const raw = JSON.parse(evt.data);
+      const rec = parseRecord(raw);
+      ingestRecord(rec);
+    } catch(e) {
+      parseErrors++;
+      showParseError(e.message);
+    }
+  };
+
+  es.onerror = () => {
+    setDotState('error');
+    setSrcStatus('SSE · reconnecting…');
+    es.close();
+    // Reconnect after 3 s
+    setTimeout(() => {
+      if (activeSource === 'sse') connectSSE();
+    }, 3000);
+  };
+}
+
+// ── Demo transport ────────────────────────────────────────────────────────────
+// Synthetic data centred on the forensic 386 MHz target.
+
+function startDemo() {
+  setSrcStatus('DEMO · running');
+  setDotState('live');
+  document.getElementById('hdr-mode').textContent = 'DEMO';
+
+  const BASE_FREQ = 385_800_000;
+  const STEP      = 10_000;       // 10 kHz channels — matches your 386 MHz scan
+  const N_FREQS   = 30;
+  const HOT_FREQ  = 386_000_000;
+  let   sweep     = 0;
+  let   fi        = 0;
+
+  demoHandle = setInterval(() => {
+    const freq  = BASE_FREQ + fi * STEP;
+    const isHot = Math.abs(freq - HOT_FREQ) <= 30_000;
+
+    const dbfs  = isHot ? -68 + Math.random() * 6 : -82 + Math.random() * 4;
+    const cf    = isHot ? 75  + Math.random() * 55 : 18  + Math.random() * 20;
+    const atten = isHot ? 82  + Math.random() * 8  : 104 + Math.random() * 8;
+    const rms   = isHot ? 6.5 + Math.random() * 2  : 3.1 + Math.random() * 0.6;
+
+    const raw = {
+      freq_hz:       freq,
+      sweep:         sweep + 1,
+      wall_iso:      new Date().toISOString(),
+      dbfs:          +dbfs.toFixed(2),
+      peak_dbfs:     +(dbfs + 32 + Math.random() * 6).toFixed(2),
+      rms:           +rms.toFixed(2),
+      crest_factor:  +cf.toFixed(2),
+      rssi_atten_db: +atten.toFixed(2),
+      iq_frames:     22_000_000 + fi * 180_000,
+      anomaly:       isHot && cf > 100,
+    };
+
+    const rec = parseRecord(raw);
+    if (rec) ingestRecord(rec);
+
+    fi++;
+    if (fi >= N_FREQS) { fi = 0; sweep++; }
+  }, 80);
+}
+
+// ── Source manager ────────────────────────────────────────────────────────────
+
+function stopAll() {
+  activeSource = null;
+  if (sseHandle)  { try { sseHandle.close(); } catch(_) {} sseHandle = null; }
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  if (demoHandle) { clearInterval(demoHandle); demoHandle = null; }
+  if (staleHandle){ clearInterval(staleHandle); staleHandle = null; }
+  setDotState('idle');
+  setSrcStatus('stopped');
+}
+
+function resetSession() {
+  freqMap.clear();
+  freqOrder.length = 0;
+  tsHistory.length = 0;
+  waterfallBuf.length = 0;
+  sweepCount = 0; recordCount = 0; anomalyCount = 0;
+  selectedFreq = null;
+  parseErrors  = 0;
+  CURSOR.byteOffset = 0;
+  CURSOR.lineCount  = 0;
+  CURSOR.sweepSeen.clear();
+  sessionStats = { dbfsMin: Infinity, dbfsMax: -Infinity, peakMax: -Infinity, cfMax: -Infinity, attenMin: Infinity, startISO: null };
+  document.getElementById('event-log').innerHTML = '';
+  document.getElementById('freq-list').innerHTML = '';
+}
+
+function connect() {
+  stopAll();
+  resetSession();
+  const src = document.getElementById('src-select').value;
+  activeSource = src;
+  document.getElementById('hdr-mode').textContent = src.toUpperCase();
+
+  if (src === 'sse') {
+    connectSSE();
+  } else if (src === 'poll') {
+    pollTick();
+    pollHandle = setInterval(pollTick, CFG.POLL_INTERVAL_MS);
+    setSrcStatus('poll · starting');
+  } else {
+    startDemo();
+  }
+
+  // Stale watchdog — only for live transports
+  if (src !== 'demo') {
+    lastDataAt = Date.now();
+    staleHandle = setInterval(() => {
+      if (Date.now() - lastDataAt > CFG.STALE_TIMEOUT_MS) setDotState('stale');
+    }, 1000);
+  }
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function setDotState(state) {
+  const dot = document.getElementById('live-dot');
+  dot.className = 'dot';
+  if (state === 'live')  dot.classList.add('live');
+  if (state === 'stale') dot.classList.add('stale');
+  if (state === 'error') dot.classList.add('error');
+}
+
+function setSrcStatus(msg) {
+  document.getElementById('src-status').textContent = msg;
+}
+
+function updateLagDisplay() {
+  const lag = Date.now() - lastDataAt;
+  document.getElementById('lag-display').textContent =
+    lag < 1000 ? '' : `LAG ${(lag/1000).toFixed(1)}s`;
+}
+
+function showParseError(msg) {
+  if (parseErrors > 20) return; // suppress flood
+  const toast = document.getElementById('err-toast');
+  toast.textContent = `[PARSE ERR #${parseErrors}] ${msg}`;
+  toast.style.display = 'block';
+  if (lastToastTimer) clearTimeout(lastToastTimer);
+  lastToastTimer = setTimeout(() => { toast.style.display = 'none'; }, CFG.ERROR_TOAST_MS);
+}
+
+// Wire connect button
+document.getElementById('btn-connect').addEventListener('click', connect);
+
+// Auto-connect: try SSE first, fall back to demo
+(function autoConnect() {
+  const es = new EventSource(CFG.SSE_URL);
+  let ok = false;
+  es.onopen  = () => { ok = true; es.close(); document.getElementById('src-select').value = 'sse'; connect(); };
+  es.onerror = () => {
+    if (!ok) {
+      es.close();
+      // Try poll source
+      fetch(CFG.POLL_URL, { cache: 'no-store' })
+        .then(r => {
+          if (r.ok) { document.getElementById('src-select').value = 'poll'; connect(); }
+          else       { document.getElementById('src-select').value = 'demo'; connect(); }
+        })
+        .catch(() => { document.getElementById('src-select').value = 'demo'; connect(); });
+    }
+  };
+  setTimeout(() => { if (!ok) { es.close(); } }, 2000);
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART 4 — SESSION MANAGEMENT, ANOMALY ENGINE, RENDER PIPELINE
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Canvas setup ─────────────────────────────────────────────────────────────
+
+const specCanvas = document.getElementById('spectrum-canvas');
+const wfCanvas   = document.getElementById('waterfall-canvas');
+const tsCanvas   = document.getElementById('timeseries-canvas');
+
+function fitCanvas(c) {
+  const r = c.parentElement.getBoundingClientRect();
+  c.width  = Math.floor(r.width)  || 1;
+  c.height = Math.floor(r.height) || 1;
+}
+
+function resizeAll() {
+  fitCanvas(specCanvas);
+  fitCanvas(wfCanvas);
+  fitCanvas(tsCanvas);
+}
+
+window.addEventListener('resize', resizeAll);
+resizeAll();
+
+// ── Color helpers ─────────────────────────────────────────────────────────────
+
+function dbfsToRGB(dbfs) {
+  const t = Math.max(0, Math.min(1, (dbfs + 100) / 100));
+  let r, g, b;
+  if      (t < 0.25) { const s = t/0.25;       r=0;           g=Math.round(s*80);         b=Math.round(40+s*120); }
+  else if (t < 0.5)  { const s=(t-0.25)/0.25;  r=0;           g=Math.round(80+s*175);     b=Math.round(160-s*160);}
+  else if (t < 0.75) { const s=(t-0.5)/0.25;   r=Math.round(s*255); g=255;                b=0; }
+  else               { const s=(t-0.75)/0.25;  r=255;         g=Math.round(255-s*255);    b=0; }
+  return [r,g,b];
+}
+
+function dbfsColor(dbfs) {
+  const [r,g,b] = dbfsToRGB(dbfs);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── Waterfall ─────────────────────────────────────────────────────────────────
+
+function pushWaterfallRow() {
+  if (freqOrder.length === 0) return;
+  const row = new Float32Array(freqOrder.length);
+  for (let i = 0; i < freqOrder.length; i++) {
+    const d = freqMap.get(freqOrder[i]);
+    row[i] = (d && d.dbfs != null) ? d.dbfs : -100;
+  }
+  waterfallBuf.unshift(row);
+  if (waterfallBuf.length > _OOB.MAX_WATERFALL_ROWS) waterfallBuf.pop();
+}
+
+// ── Spectrum draw ─────────────────────────────────────────────────────────────
+
+function drawSpectrum() {
+  const W = specCanvas.width, H = specCanvas.height;
+  const ctx = specCanvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const n = freqOrder.length;
+  if (n < 2) {
+    ctx.fillStyle = '#00ff8833';
+    ctx.font = '11px Courier New';
+    ctx.fillText('AWAITING DATA…', 20, H/2);
+    return;
+  }
+
+  const padL=52, padR=12, padT=24, padB=28;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+  const yMin=-110, yMax=0, yRange=100;
+
+  const xPos  = i   => padL + (i / (n-1)) * plotW;
+  const yPosV = v   => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  // Grid
+  ctx.strokeStyle='#00ff8818'; ctx.lineWidth=1;
+  for (let db=yMin; db<=yMax; db+=10) {
+    const y = yPosV(db);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke();
+    ctx.fillStyle='#00ff8866'; ctx.font='9px Courier New';
+    ctx.fillText(`${db}`, 2, y+4);
+  }
+  const freqStep = Math.max(1, Math.ceil(n/10));
+  for (let i=0; i<n; i+=freqStep) {
+    const x=xPos(i), fmhz=(freqOrder[i]/1e6).toFixed(1);
+    ctx.strokeStyle='#00ff8818'; ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+    ctx.fillStyle='#00ff8866'; ctx.font='9px Courier New';
+    ctx.fillText(fmhz, x-14, padT+plotH+16);
+  }
+  ctx.strokeStyle='#00ff8844'; ctx.strokeRect(padL,padT,plotW,plotH);
+
+  // PEAK trace
+  ctx.beginPath(); ctx.strokeStyle='#ff440055'; ctx.lineWidth=1;
+  let first=true;
+  for (let i=0;i<n;i++) {
+    const d=freqMap.get(freqOrder[i]);
+    const v=(d&&d.peak_dbfs!=null)?d.peak_dbfs:-100;
+    const x=xPos(i), y=yPosV(v);
+    if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // dBFS fill
+  const grad=ctx.createLinearGradient(0,padT,0,padT+plotH);
+  grad.addColorStop(0,'rgba(0,255,136,0.45)');
+  grad.addColorStop(0.6,'rgba(0,255,136,0.12)');
+  grad.addColorStop(1,'rgba(0,255,136,0.02)');
+  ctx.beginPath(); ctx.moveTo(xPos(0),padT+plotH); first=true;
+  for(let i=0;i<n;i++){
+    const d=freqMap.get(freqOrder[i]);
+    const v=(d&&d.dbfs!=null)?d.dbfs:-100;
+    if(first){ctx.lineTo(xPos(i),yPosV(v));first=false;}else ctx.lineTo(xPos(i),yPosV(v));
+  }
+  ctx.lineTo(xPos(n-1),padT+plotH); ctx.closePath();
+  ctx.fillStyle=grad; ctx.fill();
+
+  // dBFS line
+  ctx.beginPath(); ctx.strokeStyle='#00ff88'; ctx.lineWidth=1.5; first=true;
+  for(let i=0;i<n;i++){
+    const d=freqMap.get(freqOrder[i]);
+    const v=(d&&d.dbfs!=null)?d.dbfs:-100;
+    const x=xPos(i),y=yPosV(v);
+    if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // CF overlay (yellow, 0-150 mapped to plot)
+  ctx.beginPath(); ctx.strokeStyle='#ffcc4488'; ctx.lineWidth=1; first=true;
+  for(let i=0;i<n;i++){
+    const d=freqMap.get(freqOrder[i]);
+    if(!d||d.crest_factor==null) continue;
+    const x=xPos(i), y=padT+plotH-(Math.min(150,Math.max(0,d.crest_factor))/150)*plotH;
+    if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // Anomaly markers
+  for(let i=0;i<n;i++){
+    const d=freqMap.get(freqOrder[i]);
+    if(!d||!d.anomaly)continue;
+    const x=xPos(i);
+    ctx.strokeStyle='#ff4444'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+    ctx.fillStyle='#ff4444'; ctx.font='8px Courier New'; ctx.fillText('▼',x-3,padT+10);
+  }
+
+  // Selected freq cursor
+  if(selectedFreq!==null){
+    const idx=freqOrder.indexOf(selectedFreq);
+    if(idx>=0){
+      const x=xPos(idx);
+      ctx.strokeStyle='#ffffff55'; ctx.lineWidth=1;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Legend
+  ctx.font='9px Courier New';
+  ctx.fillStyle='#00ff88'; ctx.fillText('─ dBFS', padL+4, padT+14);
+  ctx.fillStyle='#ffcc44'; ctx.fillText('─ CF',  padL+58, padT+14);
+  ctx.fillStyle='#ff440088'; ctx.fillText('─ PEAK',padL+86,padT+14);
+}
+
+// ── Waterfall draw ────────────────────────────────────────────────────────────
+// Uses ImageData for performance — direct pixel writes, no per-cell fillRect.
+
+function drawWaterfall() {
+  const W=wfCanvas.width, H=wfCanvas.height;
+  const ctx=wfCanvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  if(waterfallBuf.length===0||freqOrder.length===0) return;
+
+  const padL=52, padR=12;
+  const plotW=W-padL-padR;
+  const rows=waterfallBuf.length;
+  const n=freqOrder.length;
+
+  const imgData=ctx.createImageData(plotW,H);
+  const pix=imgData.data;
+
+  for(let r=0;r<rows;r++){
+    const row=waterfallBuf[r];
+    const y0=Math.floor((r/rows)*H);
+    const y1=Math.floor(((r+1)/rows)*H);
+    for(let c=0;c<n;c++){
+      const dbfs=(c<row.length)?row[c]:-100;
+      const [R,G,B]=dbfsToRGB(dbfs);
+      const x0=Math.floor((c/n)*plotW);
+      const x1=Math.floor(((c+1)/n)*plotW);
+      for(let py=y0;py<y1&&py<H;py++){
+        for(let px=x0;px<x1&&px<plotW;px++){
+          const idx=((py*plotW)+px)*4;
+          pix[idx]=R; pix[idx+1]=G; pix[idx+2]=B; pix[idx+3]=255;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData,padL,0);
+
+  // Freq axis
+  ctx.fillStyle='#00ff8866'; ctx.font='9px Courier New';
+  const fs=Math.max(1,Math.ceil(n/10));
+  for(let i=0;i<n;i+=fs){
+    const x=padL+(i/(n-1))*plotW;
+    ctx.fillText((freqOrder[i]/1e6).toFixed(1),x-12,H-3);
+  }
+  ctx.fillStyle='#00ff8844'; ctx.font='9px Courier New';
+  ctx.fillText('NOW',0,10);
+  ctx.fillText(`-${rows}sw`,0,H-4);
+}
+
+// ── Time series draw ──────────────────────────────────────────────────────────
+
+function drawTimeSeries() {
+  const W=tsCanvas.width, H=tsCanvas.height;
+  const ctx=tsCanvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  const data=tsHistory.slice(-_OOB.MAX_TS_HISTORY);
+  if(data.length<2) return;
+
+  const padL=52, padR=12, padT=18, padB=20;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const n=data.length;
+  const xPos=i=>padL+(i/(n-1))*plotW;
+
+  // Grid
+  ctx.strokeStyle='#00ff8812'; ctx.lineWidth=1;
+  for(let t=0;t<=4;t++){const y=padT+(t/4)*plotH; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke();}
+  ctx.strokeStyle='#00ff8844'; ctx.strokeRect(padL,padT,plotW,plotH);
+
+  function drawLine(getter,color,lo,hi,lw){
+    ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=lw||1;
+    let f=true;
+    for(let i=0;i<n;i++){
+      const v=getter(data[i]);
+      if(v==null||!isFinite(v)){f=true;continue;}
+      const x=xPos(i), y=padT+plotH-((v-lo)/(hi-lo))*plotH;
+      if(f){ctx.moveTo(x,y);f=false;}else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  drawLine(d=>d.cf,    '#ffcc44', 0, 150, 1.5);
+  drawLine(d=>d.atten, '#4488ff', 0, 127, 1);
+  drawLine(d=>d.rms,   '#00ff88', 0,  80, 1);
+
+  // Anomaly markers
+  for(let i=0;i<n;i++){
+    if(!data[i].anomaly)continue;
+    const x=xPos(i);
+    ctx.strokeStyle='#ff444444'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+  }
+
+  // Y labels
+  ctx.fillStyle='#00ff8866'; ctx.font='9px Courier New';
+  ctx.fillText('150',0,padT+8); ctx.fillText('0',4,padT+plotH+4);
+
+  // Legend
+  ctx.font='9px Courier New';
+  ctx.fillStyle='#ffcc44'; ctx.fillText('CF',   padL+4,  padT+12);
+  ctx.fillStyle='#4488ff'; ctx.fillText('ATTEN',padL+24, padT+12);
+  ctx.fillStyle='#00ff88'; ctx.fillText('RMS',  padL+78, padT+12);
+}
+
+// ── Sidebar: current measurement ──────────────────────────────────────────────
+
+function updateSidebarCurrent(d) {
+  if(!d) return;
+  document.getElementById('s-freq').textContent  = (d.freq_hz/1e6).toFixed(4)+' MHz';
+  document.getElementById('s-dbfs').textContent  = d.dbfs!=null  ? d.dbfs.toFixed(2)+' dBFS' : '—';
+  document.getElementById('s-peak').textContent  = d.peak_dbfs!=null ? d.peak_dbfs.toFixed(2)+' dBFS':'—';
+  document.getElementById('s-rms').textContent   = d.rms!=null   ? d.rms.toFixed(2)  : '—';
+  document.getElementById('s-cf').textContent    = d.crest_factor!=null ? d.crest_factor.toFixed(2):'—';
+  document.getElementById('s-atten').textContent = d.rssi_atten_db!=null? d.rssi_atten_db.toFixed(2)+' dB':'—';
+  document.getElementById('s-iq').textContent    = d.iq_frames!=null ? d.iq_frames.toLocaleString():'—';
+  document.getElementById('s-time').textContent  = d.wall_iso ? d.wall_iso.slice(11,23):'—';
+
+  const el=document.getElementById('s-dbfs');
+  el.className='metric-value';
+  if(d.dbfs!=null){
+    if(d.dbfs>-60)      el.classList.add('hot');
+    else if(d.dbfs>-75) el.classList.add('warm');
+    else                el.classList.add('cold');
+  }
+}
+
+// ── Sidebar: session stats ────────────────────────────────────────────────────
+
+function updateSessionStats() {
+  const ss=sessionStats;
+  const fmt=(v,s)=>isFinite(v)?v.toFixed(2)+s:'—';
+  document.getElementById('ss-dbfs-min').textContent  = fmt(ss.dbfsMin,' dBFS');
+  document.getElementById('ss-dbfs-max').textContent  = fmt(ss.dbfsMax,' dBFS');
+  document.getElementById('ss-peak-max').textContent  = fmt(ss.peakMax,' dBFS');
+  document.getElementById('ss-cf-max').textContent    = fmt(ss.cfMax,'');
+  document.getElementById('ss-atten-min').textContent = fmt(ss.attenMin,' dB');
+  document.getElementById('ss-start').textContent     = ss.startISO ? ss.startISO.slice(0,19)+'Z':'—';
+
+  // Noise floor: Nth percentile of current dBFS values
+  const vals=[...freqMap.values()]
+    .map(d=>d.dbfs)
+    .filter(v=>v!=null)
+    .sort((a,b)=>a-b);
+  if(vals.length>0){
+    const idx=Math.floor(vals.length*CFG.NOISE_PERCENTILE);
+    document.getElementById('ss-floor').textContent=vals[idx].toFixed(2)+' dBFS';
+  }
+}
+
+// ── Sidebar: freq table (batched DOM, not rebuilt each frame) ─────────────────
+
+let freqListDirty = false;
+
+function markFreqListDirty() { freqListDirty = true; }
+
+function rebuildFreqList() {
+  if(!freqListDirty) return;
+  freqListDirty = false;
+
+  const list = document.getElementById('freq-list');
+  const existing = list.querySelectorAll('.freq-entry');
+  const existingMap = new Map();
+  existing.forEach(el => existingMap.set(Number(el.dataset.freq), el));
+
+  // Add/update
+  for(const freq of freqOrder){
+    const d=freqMap.get(freq);
+    if(!d) continue;
+    let el=existingMap.get(freq);
+    if(!el){
+      el=document.createElement('div');
+      el.className='freq-entry';
+      el.dataset.freq=freq;
+      el.innerHTML=`<span class="fe-freq"></span><span class="fe-dbfs"></span><span class="fe-cf"></span><span class="fe-atten"></span>`;
+      el.addEventListener('click',()=>{ selectedFreq=freq; updateSidebarCurrent(d); renderDirty=true; });
+      list.appendChild(el);
+      existingMap.delete(freq);
+    }
+
+    el.querySelector('.fe-freq').textContent  = (freq/1e6).toFixed(2);
+    el.querySelector('.fe-dbfs').textContent  = d.dbfs!=null  ? d.dbfs.toFixed(1)  : '—';
+    el.querySelector('.fe-cf').textContent    = d.crest_factor!=null ? d.crest_factor.toFixed(1):'—';
+    el.querySelector('.fe-atten').textContent = d.rssi_atten_db!=null? d.rssi_atten_db.toFixed(1):'—';
+
+    el.classList.toggle('anomaly',  !!d.anomaly);
+    el.classList.toggle('selected', freq===selectedFreq);
+
+    existingMap.delete(freq);
+  }
+
+  // Remove stale rows
+  existingMap.forEach(el => el.remove());
+}
+
+// ── Anomaly engine ────────────────────────────────────────────────────────────
+// Secondary anomaly re-classification: if CF > 100 AND dBFS rises above
+// session noise floor + 8 dB, promote record to anomaly even if the
+// rssi_atten threshold wasn't crossed (catches low-atten hoppers).
+
+function reclassifyAnomalies() {
+  const vals=[...freqMap.values()].map(d=>d.dbfs).filter(v=>v!=null).sort((a,b)=>a-b);
+  if(vals.length<4) return;
+  const floorIdx=Math.floor(vals.length*CFG.NOISE_PERCENTILE);
+  const floor=vals[floorIdx];
+  const threshold=floor+8.0;
+
+  for(const [,d] of freqMap){
+    if(d.anomaly) continue; // already flagged
+    if(d.crest_factor!=null && d.crest_factor>100 && d.dbfs!=null && d.dbfs>threshold){
+      d.anomaly=true;
+      anomalyCount++;
+      addAnomalyEvent(d);
+    }
+  }
+}
+
+function addAnomalyEvent(d) {
+  const log=document.getElementById('event-log');
+  if(log.children.length>_OOB.MAX_ANOMALY_LOG){
+    log.removeChild(log.lastChild);
+  }
+  const el=document.createElement('div');
+  el.className='event-entry';
+  const t=d.wall_iso?d.wall_iso.slice(11,19):'—';
+  const f=(d.freq_hz/1e6).toFixed(4);
+  const rxp=d.rx_port?` [${d.rx_port}]`:'';
+  el.innerHTML=`<span class="ev-time">${t}</span><span class="ev-freq">${f} MHz${rxp}</span> CF=${d.crest_factor?.toFixed(1)??'—'} dBFS=${d.dbfs?.toFixed(1)??'—'}`;
+  log.prepend(el);
+}
+
+// ── Header bar update ─────────────────────────────────────────────────────────
+
+function updateHeader() {
+  document.getElementById('hdr-sweep').textContent    = `#${sweepCount}`;
+  document.getElementById('hdr-records').textContent  = recordCount.toLocaleString();
+  document.getElementById('hdr-anomalies').textContent= anomalyCount.toString();
+
+  const now=Date.now();
+  const lagMs=now-lastDataAt;
+  document.getElementById('hdr-time').textContent = lagMs<30000 ? `${(lagMs/1000).toFixed(1)}s ago` : '—';
+
+  if(freqOrder.length>=2){
+    const lo=(freqOrder[0]/1e6).toFixed(2);
+    const hi=(freqOrder[freqOrder.length-1]/1e6).toFixed(2);
+    document.getElementById('hdr-range').textContent=`${lo}–${hi} MHz`;
+  }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+// Dirty-flag controlled: canvas draws only happen when data changes.
+// Sidebar stats update at reduced cadence to avoid DOM thrash.
+
+let renderDirty  = false;
+let statsTick    = 0;
+const STATS_CADENCE = 5; // every 5 render frames (~500 ms at 10fps)
+
+// Hook ingestRecord to mark render dirty
+const _origIngest = ingestRecord;
+// We patch by adding markings inside ingestRecord after definition.
+// Since it's already defined above, we wrap here:
+const _ingestBase = ingestRecord;
+
+// Patch: mark dirty on each ingest (monkey-patch style since func is `let`-free)
+// Instead we just set renderDirty=true in the render loop check against recordCount.
+let _lastRecordCount = 0;
+
+function renderFrame() {
+  // Detect new data
+  if(recordCount !== _lastRecordCount){
+    _lastRecordCount = recordCount;
+    renderDirty = true;
+    freqListDirty = true;
+    reclassifyAnomalies();
+  }
+
+  if(renderDirty){
+    renderDirty=false;
+    drawSpectrum();
+    drawWaterfall();
+    drawTimeSeries();
+    updateHeader();
+    updateSidebarCurrent(selectedFreq ? freqMap.get(selectedFreq) : [...freqMap.values()].pop());
+  }
+
+  statsTick++;
+  if(statsTick>=STATS_CADENCE){
+    statsTick=0;
+    rebuildFreqList();
+    updateSessionStats();
+  }
+
+  requestAnimationFrame(renderFrame);
+}
+
+requestAnimationFrame(renderFrame);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,911 @@
+#!/usr/bin/env python3
+"""
+hlk_ld6002b.py  —  CTW HLK-LD6002B 60GHz Forensic Sensor Driver
+=================================================================
+Dedicated driver for the Hi-Link HLK-LD6002B 3D Presence Radar Module.
+
+Hardware:
+  57-64 GHz FMCW, ADT6101P chip, 2T2R PCB antenna
+  No WiFi. No Bluetooth. No ESP32.
+  UART 115200 8N1, 3.3V logic, 4-pin connector on test board
+
+Wiring (Test Kit — already has USB-UART onboard):
+  Plug test board USB-C into PC → appears as COM port → done
+
+Wiring (bare module):
+  Pin 1  3V3  → 3.3V regulated supply (1A minimum, ripple <50mV)
+  Pin 2  GND  → GND
+  Pin 7  TX0  → USB-UART adapter RX
+  Pin 8  RX0  → USB-UART adapter TX
+  Pin 4  TX2  → optional GPIO monitor (HIGH=presence, LOW=none)
+
+What this sensor outputs over UART:
+  - Presence state (motion / micro-motion / stationary / absent)
+  - Target X coordinate (cm, relative to module center)
+  - Target Y coordinate (cm, forward distance from module)
+  - Target Z coordinate (cm, height offset from module)
+  - Target velocity (cm/s)
+  - Target count (number of detected bodies)
+  - Motion intensity score
+
+Forensic use:
+  A stationary detected "target" at fixed X/Y with no person present
+  = external 60GHz source illuminating the sensor aperture.
+  Velocity=0 + presence=True + no physical person = anomalous source.
+  Correlates with 386MHz SDR anomalies and Geiger pulse bursts on
+  shared ClockAnchor wall_ns epoch.
+
+Usage:
+  python hlk_ld6002b.py --port COM5
+  python hlk_ld6002b.py --port COM5 --out C:\\sdr\\logs
+  python hlk_ld6002b.py --port COM5 --verbose
+  python hlk_ld6002b.py --port COM5 --raw-dump
+  python hlk_ld6002b.py --list-ports
+
+Output:
+  hlk6002b_STAMP.jsonl.gz     forensic compressed log
+  runtime/mmwave_live.jsonl   live SSE mirror (same as mmwave_sensor.py)
+"""
+
+import argparse
+import datetime
+import gzip
+import json
+import os
+import struct
+import sys
+import threading
+import time
+from collections import defaultdict, deque
+
+# ── dependency check ───────────────────────────────────────────────────────
+try:
+    import serial
+    import serial.tools.list_ports
+except ImportError:
+    print("ERROR: pip install pyserial")
+    sys.exit(1)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROTOCOL CONSTANTS — HLK-LD6002B
+# ══════════════════════════════════════════════════════════════════════════════
+
+BAUD_RATE    = 115200
+FRAME_HEADER = bytes([0x53, 0x59])  # shared across LD6002 family
+FRAME_TAIL   = bytes([0x54, 0x43])
+MAX_PAYLOAD  = 256
+
+# Control byte / sub-byte definitions for LD6002B 3D presence output
+# Source: Hi-Link LD6002B communication protocol
+CTRL_PRESENCE   = 0x80   # presence/motion reports
+CTRL_TARGET     = 0x07   # target coordinate reports (LD6002B specific)
+CTRL_SYSTEM     = 0x01   # system messages
+
+SUB_PRESENCE_STATE    = 0x01  # presence state: 0=none 1=motion 2=micro 3=static
+SUB_TARGET_COORDS     = 0x01  # x,y,z + velocity (under CTRL_TARGET)
+SUB_TARGET_COUNT      = 0x02  # number of detected targets
+SUB_MOTION_INTENSITY  = 0x03  # motion intensity score 0-100
+SUB_HEARTBEAT         = 0xA0  # module heartbeat / alive ping
+SUB_VERSION           = 0x02  # firmware version (under CTRL_SYSTEM)
+
+# Presence state codes
+PRESENCE_NONE    = 0x00
+PRESENCE_MOTION  = 0x01
+PRESENCE_MICRO   = 0x02
+PRESENCE_STATIC  = 0x03
+
+PRESENCE_NAMES = {
+    PRESENCE_NONE:   "NONE",
+    PRESENCE_MOTION: "MOTION",
+    PRESENCE_MICRO:  "MICRO_MOTION",
+    PRESENCE_STATIC: "STATIC_PRESENCE",
+}
+
+# ── OOB guard ──────────────────────────────────────────────────────────────
+_OOB = {
+    "MAX_COORD_CM":   1500,   # 15 meters max
+    "MAX_VEL_CMS":    500,    # 5 m/s max
+    "MAX_INTENSITY":  100,
+    "MAX_TARGETS":    10,
+    "MAX_FRAME_BYTES":512,
+}
+
+def _ci(v, lo, hi):
+    try:
+        i = int(v)
+        return max(lo, min(hi, i))
+    except Exception:
+        return 0
+
+def _cf(v, lo, hi):
+    try:
+        f = float(v)
+        if not (-1e9 < f < 1e9): return 0.0
+        return max(lo, min(hi, f))
+    except Exception:
+        return 0.0
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CLOCK ANCHOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ClockAnchor:
+    def __init__(self):
+        best_gap = None
+        for _ in range(32):
+            t1 = time.perf_counter_ns()
+            w  = time.time_ns()
+            t2 = time.perf_counter_ns()
+            gap = t2 - t1
+            if best_gap is None or gap < best_gap:
+                best_gap         = gap
+                self._mono_epoch = (t1 + t2) // 2
+                self._wall_epoch = w
+        self.session_wall_ns  = self._wall_epoch
+        self.session_mono_ns  = self._mono_epoch
+        self.session_wall_utc = datetime.datetime.fromtimestamp(
+            self._wall_epoch / 1e9, tz=datetime.timezone.utc
+        ).isoformat()
+
+    def now(self):
+        mono  = time.perf_counter_ns()
+        delta = mono - self._mono_epoch
+        return self._wall_epoch + delta, delta
+
+    def format_wall_ns(self, wall_ns):
+        whole = wall_ns // 1_000_000_000
+        frac  = wall_ns  % 1_000_000_000
+        base  = datetime.datetime.fromtimestamp(
+            whole, tz=datetime.timezone.utc
+        ).strftime('%Y-%m-%dT%H:%M:%S')
+        return f"{base}.{frac:09d}Z"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GZIP LOG
+# ══════════════════════════════════════════════════════════════════════════════
+
+class GzipLog:
+    def __init__(self, path, header):
+        self.path    = path
+        self._q      = deque()
+        self._event  = threading.Event()
+        self._stop   = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, daemon=True,
+            name=f'GzipLog:{os.path.basename(path)}'
+        )
+        first = json.dumps(header, separators=(',',':')) + '\n'
+        with gzip.open(self.path, 'ab', compresslevel=6) as gz:
+            gz.write(first.encode())
+        self._thread.start()
+
+    def write(self, obj):
+        self._q.append(obj); self._event.set()
+
+    def close(self):
+        self._stop.set(); self._event.set()
+        self._thread.join(timeout=8)
+
+    def _run(self):
+        while not self._stop.is_set():
+            self._event.wait(); self._event.clear(); self._drain()
+        self._drain()
+
+    def _drain(self):
+        if not self._q: return
+        lines = []
+        while self._q:
+            lines.append(json.dumps(self._q.popleft(), separators=(',',':')))
+        blob = ('\n'.join(lines) + '\n').encode()
+        with gzip.open(self.path, 'ab', compresslevel=6) as gz:
+            gz.write(blob)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LIVE MIRROR
+# ══════════════════════════════════════════════════════════════════════════════
+
+class LiveMirror:
+    def __init__(self, path):
+        self.path  = path
+        self._lock = threading.Lock()
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('')
+
+    def write(self, obj):
+        line = json.dumps(obj, separators=(',',':')) + '\n'
+        with self._lock:
+            with open(self.path, 'a', encoding='utf-8') as f:
+                f.write(line)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FRAME PARSER — HLK-LD6002B binary protocol
+# ══════════════════════════════════════════════════════════════════════════════
+
+class LD6002BFramer:
+    """
+    Stateful binary framer for the HLK-LD6002B UART stream.
+
+    Frame structure:
+      [0x53][0x59]  Header      2 bytes
+      [ctrl]        Control     1 byte
+      [sub]         Sub-command 1 byte
+      [len_lo][len_hi] Payload length 2 bytes, little-endian
+      [payload...]  Data        N bytes
+      [checksum]    Sum of all preceding bytes & 0xFF, 1 byte
+      [0x54][0x43]  Tail        2 bytes
+
+    Total minimum frame: 2+1+1+2+0+1+2 = 9 bytes
+    """
+
+    def __init__(self):
+        self._buf = bytearray()
+
+    def feed(self, data: bytes):
+        """Feed bytes, yield complete (ctrl, sub, payload) tuples."""
+        self._buf.extend(data)
+        while True:
+            result = self._try_extract()
+            if result is None:
+                break
+            yield result
+
+    def _try_extract(self):
+        # Find header
+        idx = self._buf.find(FRAME_HEADER)
+        if idx == -1:
+            # No header — keep last byte in case it's start of header
+            if len(self._buf) > 1:
+                self._buf = self._buf[-1:]
+            return None
+        if idx > 0:
+            del self._buf[:idx]
+
+        # Need at least 9 bytes for a minimal frame
+        if len(self._buf) < 9:
+            return None
+
+        ctrl    = self._buf[2]
+        sub     = self._buf[3]
+        pay_len = self._buf[4] | (self._buf[5] << 8)
+
+        # OOB guard on payload length
+        if pay_len > _OOB["MAX_FRAME_BYTES"]:
+            del self._buf[:2]  # skip this header, try next
+            return None
+
+        frame_end = 6 + pay_len + 1 + 2  # header+ctrl+sub+len+payload+cksum+tail
+        if len(self._buf) < frame_end:
+            return None
+
+        # Verify tail
+        if self._buf[frame_end-2:frame_end] != FRAME_TAIL:
+            del self._buf[:2]
+            return None
+
+        # Verify checksum
+        payload  = bytes(self._buf[6:6+pay_len])
+        expected = sum(self._buf[:6+pay_len]) & 0xFF
+        actual   = self._buf[6+pay_len]
+
+        del self._buf[:frame_end]
+
+        if expected != actual:
+            return None  # bad checksum, discard
+
+        return (ctrl, sub, payload)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RECORD DECODER — translate raw frame bytes to structured data
+# ══════════════════════════════════════════════════════════════════════════════
+
+def decode_presence_state(payload):
+    """CTRL=0x80 SUB=0x01 — presence state"""
+    if len(payload) < 1:
+        return None
+    code = payload[0]
+    return {
+        "presence_code":  code,
+        "presence_state": PRESENCE_NAMES.get(code, f"UNKNOWN_0x{code:02X}"),
+        "presence":       code != PRESENCE_NONE,
+        "motion":         code == PRESENCE_MOTION,
+        "micro_motion":   code == PRESENCE_MICRO,
+        "static":         code == PRESENCE_STATIC,
+    }
+
+def decode_target_coords(payload):
+    """
+    CTRL=0x07 SUB=0x01 — target coordinates and velocity.
+
+    LD6002B outputs per-target records.
+    Each target: 8 bytes
+      x_raw: int16 little-endian  (cm, signed)
+      y_raw: int16 little-endian  (cm, signed, forward=positive)
+      z_raw: int16 little-endian  (cm, signed, up=positive)
+      v_raw: int16 little-endian  (cm/s, signed, approach=negative)
+    """
+    if len(payload) < 2:
+        return None
+
+    # First 2 bytes may be target count
+    target_count = payload[0] if len(payload) > 8 else len(payload) // 8
+    targets = []
+    offset  = 0
+
+    # Try fixed-record parsing
+    while offset + 8 <= len(payload):
+        try:
+            x, y, z, v = struct.unpack_from('<hhhh', payload, offset)
+            offset += 8
+            # OOB clamp
+            x = _ci(x, -_OOB["MAX_COORD_CM"],  _OOB["MAX_COORD_CM"])
+            y = _ci(y,  0,                      _OOB["MAX_COORD_CM"])
+            z = _ci(z, -_OOB["MAX_COORD_CM"],  _OOB["MAX_COORD_CM"])
+            v = _ci(v, -_OOB["MAX_VEL_CMS"],   _OOB["MAX_VEL_CMS"])
+
+            import math
+            dist = round(math.sqrt(x**2 + y**2 + z**2) / 100.0, 3)
+
+            targets.append({
+                "x_cm":    x,
+                "y_cm":    y,
+                "z_cm":    z,
+                "vel_cms": v,
+                "dist_m":  dist,
+                "stationary": abs(v) < 5,  # <5 cm/s = effectively stationary
+            })
+        except struct.error:
+            break
+
+    return {
+        "target_count": len(targets),
+        "targets":      targets,
+    }
+
+def decode_motion_intensity(payload):
+    """CTRL=0x80 SUB=0x03 — motion intensity 0-100"""
+    if len(payload) < 1:
+        return None
+    return {
+        "motion_intensity": _ci(payload[0], 0, _OOB["MAX_INTENSITY"]),
+    }
+
+def decode_version(payload):
+    """CTRL=0x01 SUB=0x02 — firmware version"""
+    if len(payload) < 3:
+        return None
+    return {
+        "fw_major": payload[0],
+        "fw_minor": payload[1],
+        "fw_patch": payload[2],
+        "fw_version": f"{payload[0]}.{payload[1]}.{payload[2]}",
+    }
+
+def decode_heartbeat(payload):
+    """CTRL=0x80 SUB=0xA0 — module alive ping"""
+    return {"heartbeat": True}
+
+# Dispatch table: (ctrl, sub) -> decoder function
+DECODERS = {
+    (0x80, SUB_PRESENCE_STATE):   decode_presence_state,
+    (0x07, SUB_TARGET_COORDS):    decode_target_coords,
+    (0x80, SUB_MOTION_INTENSITY): decode_motion_intensity,
+    (0x01, SUB_VERSION):          decode_version,
+    (0x80, SUB_HEARTBEAT):        decode_heartbeat,
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ANOMALY ENGINE — LD6002B specific
+# ══════════════════════════════════════════════════════════════════════════════
+
+class LD6002BAnomalyEngine:
+    """
+    Forensic anomaly classifiers specific to LD6002B 3D presence output.
+
+    PHANTOM_TARGET   — presence detected with no person physically present
+                       (requires operator to confirm room is empty at session start)
+    STATIONARY_SOURCE — detected target with near-zero velocity at fixed coordinates
+                        consistent with a stationary external 60GHz emitter
+    COORDINATE_DRIFT  — detected "person" coordinates shift in a non-human pattern
+                        (too fast, impossible trajectory, teleports between readings)
+    INTENSITY_SPIKE   — motion intensity spikes above baseline with no person present
+    """
+
+    def __init__(self, clock, log, mirror, verbose=False):
+        self.clock   = clock
+        self.log     = log
+        self.mirror  = mirror
+        self.verbose = verbose
+
+        # State
+        self._last_coords      = None   # (x,y,z) from last frame
+        self._last_coord_ns    = None
+        self._intensity_hist   = deque(maxlen=30)
+        self._coord_hist       = deque(maxlen=20)
+        self._presence_streak  = 0
+        self._phantom_confirmed= False  # set True when operator confirms empty room
+
+        self.counts = defaultdict(int)
+        self._seq   = 0
+
+    def confirm_empty_room(self):
+        """
+        Operator call: confirms room is physically empty at this moment.
+        All subsequent presence detections are forensic anomalies.
+        """
+        self._phantom_confirmed = True
+        print("\n[LD6002B] ROOM CONFIRMED EMPTY — all presence events are anomalous")
+
+    def feed(self, record: dict, wall_ns: int):
+        """Process one decoded record through all classifiers."""
+        rtype = record.get("type", "")
+
+        if rtype == "PRESENCE":
+            self._check_phantom(record, wall_ns)
+
+        elif rtype == "TARGET":
+            self._check_stationary(record, wall_ns)
+            self._check_drift(record, wall_ns)
+
+        elif rtype == "INTENSITY":
+            self._check_intensity_spike(record, wall_ns)
+
+    def _check_phantom(self, r, wall_ns):
+        """Presence detected — if room confirmed empty, this is anomalous."""
+        if not r.get("presence"):
+            self._presence_streak = 0
+            return
+
+        self._presence_streak += 1
+
+        if self._phantom_confirmed and self._presence_streak >= 3:
+            self._emit("PHANTOM_TARGET", {
+                "presence_state":  r.get("presence_state"),
+                "presence_streak": self._presence_streak,
+                "detail": f"60GHz presence detected ({r.get('presence_state')}) "
+                          f"in confirmed-empty room. "
+                          f"Streak={self._presence_streak} consecutive frames. "
+                          f"External 60GHz source indicated.",
+            }, wall_ns, "CRITICAL")
+
+    def _check_stationary(self, r, wall_ns):
+        """Target at near-zero velocity = not a walking person."""
+        for t in r.get("targets", []):
+            if not t.get("stationary"):
+                continue
+
+            x, y, z = t["x_cm"], t["y_cm"], t["z_cm"]
+            v       = t["vel_cms"]
+
+            # Track coordinate history for this "target"
+            self._coord_hist.append((wall_ns, x, y, z, v))
+
+            # Need at least 5 consecutive stationary readings
+            if len(self._coord_hist) < 5:
+                continue
+
+            recent = list(self._coord_hist)[-5:]
+            all_stationary = all(abs(p[4]) < 5 for p in recent)
+            if not all_stationary:
+                continue
+
+            # Compute coordinate variance — a real person fidgets
+            xs = [p[1] for p in recent]
+            ys = [p[2] for p in recent]
+            x_var = max(xs) - min(xs)
+            y_var = max(ys) - min(ys)
+
+            # If variance < 10cm over 5 frames = locked position = not human
+            if x_var < 10 and y_var < 10:
+                self._emit("STATIONARY_SOURCE", {
+                    "x_cm":      x,
+                    "y_cm":      y,
+                    "z_cm":      z,
+                    "vel_cms":   v,
+                    "dist_m":    t["dist_m"],
+                    "x_var_cm":  x_var,
+                    "y_var_cm":  y_var,
+                    "detail": f"60GHz target locked at ({x},{y},{z})cm "
+                              f"vel={v}cm/s over 5+ frames. "
+                              f"Coordinate variance {x_var}cm×{y_var}cm "
+                              f"inconsistent with human micro-motion. "
+                              f"Stationary external emitter indicated.",
+                }, wall_ns, "CRITICAL")
+
+    def _check_drift(self, r, wall_ns):
+        """Detect impossible target trajectory — teleportation between readings."""
+        targets = r.get("targets", [])
+        if not targets or self._last_coords is None or self._last_coord_ns is None:
+            if targets:
+                t = targets[0]
+                self._last_coords  = (t["x_cm"], t["y_cm"], t["z_cm"])
+                self._last_coord_ns = wall_ns
+            return
+
+        import math
+        dt_s = (wall_ns - self._last_coord_ns) / 1e9
+        if dt_s <= 0 or dt_s > 2.0:
+            # Reset if gap too large
+            t = targets[0]
+            self._last_coords   = (t["x_cm"], t["y_cm"], t["z_cm"])
+            self._last_coord_ns = wall_ns
+            return
+
+        t  = targets[0]
+        nx, ny, nz = t["x_cm"], t["y_cm"], t["z_cm"]
+        ox, oy, oz = self._last_coords
+
+        dist_cm = math.sqrt((nx-ox)**2 + (ny-oy)**2 + (nz-oz)**2)
+        speed_ms = (dist_cm / 100.0) / dt_s  # m/s
+
+        self._last_coords   = (nx, ny, nz)
+        self._last_coord_ns = wall_ns
+
+        # Human top speed ~10 m/s (sprint). >15 m/s = impossible = not human
+        if speed_ms > 15.0:
+            self._emit("IMPOSSIBLE_TRAJECTORY", {
+                "from_xyz":    list(self._last_coords),
+                "to_xyz":      [nx, ny, nz],
+                "dist_cm":     round(dist_cm, 1),
+                "dt_s":        round(dt_s, 4),
+                "speed_ms":    round(speed_ms, 2),
+                "detail": f"Target moved {dist_cm:.0f}cm in {dt_s:.3f}s "
+                          f"= {speed_ms:.1f}m/s. "
+                          f"Exceeds human maximum (10m/s). "
+                          f"Consistent with switching between multiple "
+                          f"external 60GHz emitters.",
+            }, wall_ns, "HIGH")
+
+    def _check_intensity_spike(self, r, wall_ns):
+        """Motion intensity spike above rolling baseline."""
+        intensity = r.get("motion_intensity", 0)
+        self._intensity_hist.append(intensity)
+
+        if len(self._intensity_hist) < 10:
+            return
+
+        baseline = sorted(self._intensity_hist)[len(self._intensity_hist)//4]
+        excess   = intensity - baseline
+
+        if excess >= 30 and self._phantom_confirmed:
+            self._emit("INTENSITY_SPIKE", {
+                "intensity":  intensity,
+                "baseline":   baseline,
+                "excess":     excess,
+                "detail": f"Motion intensity {intensity}/100 is {excess} "
+                          f"above baseline {baseline} in confirmed-empty room. "
+                          f"External 60GHz modulation detected.",
+            }, wall_ns, "HIGH")
+
+    def _emit(self, event, fields, wall_ns, severity="HIGH"):
+        self._seq += 1
+        self.counts[event] += 1
+        rec = {
+            "type":       f"LD6002B_{event}",
+            "_stream":    "mmwave",
+            "seq":        self._seq,
+            "severity":   severity,
+            "wall_ns":    wall_ns,
+            "wall_iso":   self.clock.format_wall_ns(wall_ns),
+            "sensor":     "HLK-LD6002B",
+            "freq_ghz":   60.5,
+            **fields,
+        }
+        self.log.write(rec)
+        self.mirror.write(rec)
+
+        tag = "!!! CRITICAL !!!" if severity == "CRITICAL" else "***   HIGH   ***"
+        print(
+            f"\n  [{rec['wall_iso'][11:23]}]  {tag}  "
+            f"LD6002B_{event}  "
+            f"{fields.get('detail','')[:80]}",
+            flush=True
+        )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN READER LOOP
+# ══════════════════════════════════════════════════════════════════════════════
+
+STAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def run(port, out_dir, runtime_dir, verbose, raw_dump, clock,
+        log, mirror, anomaly, stop_event):
+
+    print(f"[LD6002B] Opening {port} @ {BAUD_RATE} baud...")
+
+    try:
+        ser = serial.Serial(port, BAUD_RATE, timeout=0.1,
+                            bytesize=8, parity='N', stopbits=1)
+        ser.reset_input_buffer()
+    except Exception as e:
+        print(f"[LD6002B] Serial open failed: {e}")
+        return
+
+    print(f"[LD6002B] Connected. Waiting for frames...")
+
+    framer   = LD6002BFramer()
+    seq      = 0
+    frame_ct = 0
+    last_status_ns = clock.now()[0]
+
+    # Running state — accumulate across frames before emitting combined record
+    state = {
+        "presence_state":  "NONE",
+        "presence":        False,
+        "motion":          False,
+        "micro_motion":    False,
+        "static":          False,
+        "target_count":    0,
+        "targets":         [],
+        "motion_intensity":0,
+        "fw_version":      None,
+    }
+
+    while not stop_event.is_set():
+        try:
+            raw = ser.read(512)
+        except Exception as e:
+            print(f"\n[LD6002B] Read error: {e}")
+            break
+
+        if not raw:
+            continue
+
+        if raw_dump:
+            print(f"RAW: {raw.hex()}")
+
+        for ctrl, sub, payload in framer.feed(raw):
+            wall_ns, mono_ns = clock.now()
+            frame_ct += 1
+
+            # Decode
+            decoder = DECODERS.get((ctrl, sub))
+            decoded = decoder(payload) if decoder else None
+
+            if decoded is None:
+                if verbose:
+                    print(f"\n[LD6002B] Unknown ctrl=0x{ctrl:02X} "
+                          f"sub=0x{sub:02X} len={len(payload)}: "
+                          f"{payload.hex()[:32]}")
+                continue
+
+            # Update running state
+            if (ctrl, sub) == (0x80, SUB_PRESENCE_STATE):
+                state.update(decoded)
+                rec_type = "PRESENCE"
+            elif (ctrl, sub) == (0x07, SUB_TARGET_COORDS):
+                state["target_count"] = decoded["target_count"]
+                state["targets"]      = decoded["targets"]
+                rec_type = "TARGET"
+            elif (ctrl, sub) == (0x80, SUB_MOTION_INTENSITY):
+                state["motion_intensity"] = decoded["motion_intensity"]
+                rec_type = "INTENSITY"
+            elif (ctrl, sub) == (0x01, SUB_VERSION):
+                state["fw_version"] = decoded.get("fw_version")
+                rec_type = "VERSION"
+                print(f"[LD6002B] Firmware: {decoded.get('fw_version')}")
+            elif (ctrl, sub) == (0x80, SUB_HEARTBEAT):
+                rec_type = "HEARTBEAT"
+            else:
+                rec_type = f"CTRL_{ctrl:02X}_SUB_{sub:02X}"
+
+            seq += 1
+            full_rec = {
+                "type":            f"LD6002B_{rec_type}",
+                "_stream":         "mmwave",
+                "seq":             seq,
+                "wall_ns":         wall_ns,
+                "wall_iso":        clock.format_wall_ns(wall_ns),
+                "mono_ns":         mono_ns,
+                "ctrl":            ctrl,
+                "sub":             sub,
+                "sensor":          "HLK-LD6002B",
+                "freq_ghz":        60.5,
+                **decoded,
+                # Always include latest full state snapshot
+                "state_presence":  state["presence"],
+                "state_targets":   state["target_count"],
+                "state_intensity": state["motion_intensity"],
+            }
+            log.write(full_rec)
+            mirror.write(full_rec)
+
+            # Run anomaly engine
+            anomaly.feed({"type": rec_type, **decoded}, wall_ns)
+
+            # Console status line every 500ms
+            now_ns = wall_ns
+            if (now_ns - last_status_ns) >= 500_000_000:
+                last_status_ns = now_ns
+                pres   = state["presence_state"]
+                tgt    = state["target_count"]
+                inten  = state["motion_intensity"]
+                anom   = sum(anomaly.counts.values())
+
+                # First target coordinates if available
+                coord_str = ""
+                if state["targets"]:
+                    t0 = state["targets"][0]
+                    coord_str = (f"  XY=({t0['x_cm']},{t0['y_cm']})cm"
+                                 f"  D={t0['dist_m']:.2f}m"
+                                 f"  V={t0['vel_cms']}cm/s")
+
+                print(
+                    f"\r  [{clock.format_wall_ns(wall_ns)[11:23]}]"
+                    f"  {pres:<16}"
+                    f"  T={tgt}"
+                    f"  I={inten:>3}/100"
+                    f"{coord_str}"
+                    f"  A={anom}"
+                    f"  F={frame_ct}   ",
+                    end='', flush=True
+                )
+
+    try:
+        ser.close()
+    except Exception:
+        pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+
+def list_ports():
+    ports = list(serial.tools.list_ports.comports())
+    if not ports:
+        print("  No serial ports found.")
+        return
+    print(f"\n  {'Port':<12} {'Description':<40} {'HWID'}")
+    print(f"  {'-'*12} {'-'*40} {'-'*20}")
+    for p in ports:
+        print(f"  {p.device:<12} {p.description[:39]:<40} {p.hwid}")
+    print()
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="CTW HLK-LD6002B 60GHz Forensic Sensor Driver",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    ap.add_argument("--port",       default="COM5",
+                    help="Serial port (default: COM5)")
+    ap.add_argument("--out",        default=".",
+                    metavar="DIR",  help="Output directory")
+    ap.add_argument("--verbose",    action="store_true",
+                    help="Print unknown frame types")
+    ap.add_argument("--raw-dump",   action="store_true",
+                    help="Dump all raw hex bytes to console")
+    ap.add_argument("--list-ports", action="store_true",
+                    help="List available serial ports and exit")
+    ap.add_argument("--empty-room", action="store_true",
+                    help="Confirm room is empty — enables phantom detection")
+    args = ap.parse_args()
+
+    if args.list_ports:
+        list_ports()
+        return
+
+    out_dir     = os.path.abspath(args.out)
+    runtime_dir = os.path.join(out_dir, "runtime")
+    os.makedirs(out_dir,     exist_ok=True)
+    os.makedirs(runtime_dir, exist_ok=True)
+
+    from ntp_web import get_ntp_info
+    print("Querying web time reference...", flush=True)
+    ntp_info = get_ntp_info()
+    print(f"  Source : {ntp_info['ntp_source']}")
+    print(f"  Offset : {ntp_info.get('ntp_offset_ms','?')} ms")
+
+    clock = ClockAnchor()
+
+    header = {
+        "type":             "ld6002b_session_header",
+        "sensor":           "HLK-LD6002B",
+        "freq_range_ghz":   [57.0, 64.0],
+        "chip":             "ADT6101P",
+        "antenna":          "2T2R PCB microstrip",
+        "baud_rate":        BAUD_RATE,
+        "session_wall_utc": clock.session_wall_utc,
+        "session_wall_ns":  clock.session_wall_ns,
+        "session_mono_ns":  clock.session_mono_ns,
+        "ntp_source":       ntp_info["ntp_source"],
+        "ntp_offset_ms":    ntp_info.get("ntp_offset_ms"),
+        "port":             args.port,
+        "wireless":         "NONE",
+        "stamp":            STAMP,
+        "empty_room_confirmed": args.empty_room,
+        "detection": {
+            "motion_range_m":       3.0,
+            "static_range_m":       3.0,
+            "beam_h_deg":           120,
+            "beam_v_deg":           120,
+            "velocity_output":      True,
+            "coordinate_output":    True,
+            "forensic_note": (
+                "False presence in confirmed-empty room = "
+                "external 60GHz source. "
+                "Stationary target at fixed coords = "
+                "external emitter not human body."
+            ),
+        },
+    }
+
+    gz_path   = os.path.join(out_dir,     f"hlk6002b_{STAMP}.jsonl.gz")
+    live_path = os.path.join(runtime_dir, "mmwave_live.jsonl")
+
+    log    = GzipLog(gz_path, header)
+    mirror = LiveMirror(live_path)
+    mirror.write(header)
+
+    anomaly = LD6002BAnomalyEngine(
+        clock   = clock,
+        log     = log,
+        mirror  = mirror,
+        verbose = args.verbose,
+    )
+
+    if args.empty_room:
+        anomaly.confirm_empty_room()
+
+    print(f"\n{'='*68}")
+    print(f"  CTW HLK-LD6002B 60GHz FORENSIC SENSOR DRIVER")
+    print(f"{'='*68}")
+    print(f"  Port            : {args.port}")
+    print(f"  Baud            : {BAUD_RATE}")
+    print(f"  Freq range      : 57–64 GHz  FMCW  ADT6101P")
+    print(f"  Antenna         : 2T2R PCB  ±60° H  ±60° V")
+    print(f"  Detection range : 3m motion  3m static")
+    print(f"  Wireless        : NONE")
+    print(f"  Empty room mode : {'ENABLED — all presence = ANOMALY' if args.empty_room else 'disabled'}")
+    print(f"  Log             : hlk6002b_{STAMP}.jsonl.gz")
+    print(f"  Live mirror     : {live_path}")
+    print(f"{'='*68}")
+    print(f"  Status: PRESENCE  T=targets  I=intensity  A=anomalies  F=frames")
+    print(f"  Ctrl+C to stop")
+    print(f"{'='*68}\n")
+
+    stop_event = threading.Event()
+
+    reader = threading.Thread(
+        target=run,
+        args=(args.port, out_dir, runtime_dir,
+              args.verbose, args.raw_dump,
+              clock, log, mirror, anomaly, stop_event),
+        daemon=True,
+        name="LD6002B-Reader"
+    )
+    reader.start()
+
+    try:
+        while not stop_event.is_set():
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+        reader.join(timeout=5)
+
+        wall_ns, mono_ns = clock.now()
+        end_rec = {
+            "type":      "session_end",
+            "_stream":   "mmwave",
+            "wall_ns":   wall_ns,
+            "wall_iso":  clock.format_wall_ns(wall_ns),
+            "mono_ns":   mono_ns,
+            "anomalies": dict(anomaly.counts),
+            "total":     sum(anomaly.counts.values()),
+        }
+        log.write(end_rec)
+        mirror.write(end_rec)
+        log.close()
+
+        print(f"\n\nLD6002B session complete.")
+        for k, v in anomaly.counts.items():
+            print(f"  {k:<30} : {v}")
+        print(f"  Log : {gz_path}")
+
+
+if __name__ == "__main__":
+    main()

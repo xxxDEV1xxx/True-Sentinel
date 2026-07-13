@@ -1,0 +1,26 @@
+To add any new sensor — say a WR-15 waveguide power meter that shows up over USB next month — the only thing you write is:
+pythonclass WR15PowerMeter(MMWaveSensor):
+    def __init__(self, args, clock):
+        super().__init__(args, clock)
+        self.name           = "wr15_usb"
+        self.description    = "WR-15 waveguide USB power meter"
+        self.freq_range_ghz = (50.0, 75.0)
+
+    def open(self) -> bool:
+        # your USB init here
+        return True
+
+    def read_sample(self) -> Optional[MMWaveSample]:
+        wall_ns, mono_ns = self.clock.now()
+        # your read here
+        return MMWaveSample(
+            wall_ns=wall_ns, mono_ns=mono_ns,
+            wall_iso=self.clock.format_wall_ns(wall_ns),
+            power_raw=0.0, sensor_name=self.name
+        )
+
+    def close(self): pass
+
+# Then one line in the registry:
+SENSOR_REGISTRY["wr15_usb"] = WR15PowerMeter
+That is the entire porting effort for any new hardware.

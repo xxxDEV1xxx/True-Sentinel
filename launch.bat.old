@@ -1,0 +1,257 @@
+@echo off
+setlocal enabledelayedexpansion
+
+set BASE=C:\sdr\logs
+set PYTHON=python
+
+echo.
+echo  ================================================================
+echo   CTW RF + GNSS + BT + CSS Forensic Monitor -- Full Launch
+echo  ================================================================
+echo.
+
+:: ── Kill any leftover sessions ────────────────────────────────────────
+echo [CTW] Clearing previous session...
+taskkill /FI "WINDOWTITLE eq CTW-gz_watch"    /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-live_reader" /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-rf_server"   /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-sweep"       /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-correlator"  /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-ublox_data"  /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-ublox"       /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-gnss"        /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-bt"          /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-css"         /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-css-idle"    /T /F >nul 2>&1
+timeout /t 1 /nobreak >nul
+echo [  OK] Previous session cleared.
+
+:: ── Create dirs ───────────────────────────────────────────────────────
+if not exist "%BASE%\runtime"               mkdir "%BASE%\runtime"
+if not exist "%BASE%\runtime\process_logs"  mkdir "%BASE%\runtime\process_logs"
+if not exist "%BASE%\UBLOX"                mkdir "%BASE%\UBLOX"
+
+:: ── Write stop.bat immediately ────────────────────────────────────────
+(
+echo @echo off
+echo echo Stopping CTW pipeline...
+echo taskkill /FI "WINDOWTITLE eq CTW-gz_watch"    /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-live_reader" /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-rf_server"   /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-sweep"       /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-correlator"  /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-ublox_data"  /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-ublox"       /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-gnss"        /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-bt"          /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-css"         /T /F ^>nul 2^>^&1
+echo taskkill /FI "WINDOWTITLE eq CTW-css-idle"    /T /F ^>nul 2^>^&1
+echo timeout /t 1 /nobreak ^>nul
+echo echo Done.
+echo pause
+) > "%BASE%\stop.bat"
+echo [  OK] stop.bat written.
+
+:: ── Check ports ───────────────────────────────────────────────────────
+echo [CTW] Checking ports...
+%PYTHON% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',8000)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
+if not errorlevel 1 ( echo [ ERR] Port 8000 in use. Run stop.bat first. & pause & exit /b 1 )
+%PYTHON% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',8080)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
+if not errorlevel 1 ( echo [ ERR] Port 8080 in use. Run stop.bat first. & pause & exit /b 1 )
+%PYTHON% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',8001)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
+if not errorlevel 1 ( echo [ ERR] Port 8001 in use. Run stop.bat first. & pause & exit /b 1 )
+echo [  OK] Ports 8000, 8080, 8001 are free.
+
+:: ══════════════════════════════════════════════════════════════════════
+:: CORE INFRASTRUCTURE
+:: ══════════════════════════════════════════════════════════════════════
+
+:: ── 1. gz_watch.py ───────────────────────────────────────────────────
+echo [CTW] Window 1 -- gz_watch.py
+start "CTW-gz_watch" cmd /k "title CTW-gz_watch && %PYTHON% %BASE%\gz_watch.py"
+timeout /t 2 /nobreak >nul
+echo [  OK] gz_watch running.
+
+:: ── 2. live_reader.py ────────────────────────────────────────────────
+echo [CTW] Window 2 -- live_reader.py
+start "CTW-live_reader" cmd /k "title CTW-live_reader && %PYTHON% %BASE%\live_reader.py"
+echo [CTW] Waiting for live_reader on :8080...
+set WAIT=0
+:wait_8080
+timeout /t 1 /nobreak >nul
+set /a WAIT+=1
+if !WAIT! geq 20 ( echo [ ERR] live_reader timeout. & pause & exit /b 1 )
+%PYTHON% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',8080)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
+if errorlevel 1 goto wait_8080
+echo [  OK] live_reader on :8080.
+
+:: ── 3. rf_server.py ──────────────────────────────────────────────────
+echo [CTW] Window 3 -- rf_server.py
+start "CTW-rf_server" cmd /k "title CTW-rf_server && %PYTHON% %BASE%\rf_server.py"
+echo [CTW] Waiting for rf_server on :8000...
+set WAIT=0
+:wait_8000
+timeout /t 1 /nobreak >nul
+set /a WAIT+=1
+if !WAIT! geq 20 ( echo [ ERR] rf_server timeout. & pause & exit /b 1 )
+%PYTHON% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',8000)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
+if errorlevel 1 goto wait_8000
+echo [  OK] rf_server on :8000.
+
+:: ── 4. correlator.py ─────────────────────────────────────────────────
+echo [CTW] Window 4 -- correlator.py
+start "CTW-correlator" cmd /k "title CTW-correlator && %PYTHON% %BASE%\correlator.py --rf-live %BASE%\runtime\sweep_live.jsonl --out %BASE%\runtime --window 0.5 --spike 0.10"
+timeout /t 1 /nobreak >nul
+echo [  OK] correlator running.
+
+:: ══════════════════════════════════════════════════════════════════════
+:: RF SWEEP — 386 MHz forensic target
+:: ══════════════════════════════════════════════════════════════════════
+
+:: ── 5. pluto_sweep.py ────────────────────────────────────────────────
+echo [CTW] Window 5 -- pluto_sweep.py
+start "CTW-sweep" cmd /k "title CTW-sweep && %PYTHON% %BASE%\pluto_sweep.py --out %BASE% --start 385900000 --stop 386100000 --step 10000 --no-iq"
+timeout /t 1 /nobreak >nul
+echo [  OK] pluto_sweep running.
+
+:: ══════════════════════════════════════════════════════════════════════
+:: GNSS / GPS
+:: ══════════════════════════════════════════════════════════════════════
+
+:: ── 6. ublox_data.py ─────────────────────────────────────────────────
+if exist "%BASE%\ublox_data.py" (
+    echo [CTW] Window 6 -- ublox_data.py
+    start "CTW-ublox_data" cmd /k "title CTW-ublox_data && %PYTHON% %BASE%\ublox_data.py"
+    echo [CTW] Waiting 5s for first UBX file...
+    timeout /t 5 /nobreak >nul
+    echo [  OK] ublox_data running.
+) else (
+    echo [WARN] ublox_data.py not found -- skipping GNSS capture.
+)
+
+:: ── 7. ublox_parser.py ───────────────────────────────────────────────
+if exist "%BASE%\ublox_parser.py" (
+    echo [CTW] Window 7 -- ublox_parser.py
+    start "CTW-ublox" cmd /k "title CTW-ublox && %PYTHON% %BASE%\ublox_parser.py --ubx-dir %BASE%\UBLOX --out %BASE%\UBLOX"
+    timeout /t 2 /nobreak >nul
+    echo [  OK] ublox_parser running.
+) else (
+    echo [WARN] ublox_parser.py not found -- skipping.
+)
+
+:: ── 8. gnss_server.py ────────────────────────────────────────────────
+if exist "%BASE%\gnss_server.py" (
+    echo [CTW] Window 8 -- gnss_server.py
+    start "CTW-gnss" cmd /k "title CTW-gnss && %PYTHON% %BASE%\gnss_server.py"
+    echo [CTW] Waiting for gnss_server on :8001...
+    set WAIT=0
+    :wait_8001
+    timeout /t 1 /nobreak >nul
+    set /a WAIT+=1
+    if !WAIT! geq 20 ( echo [WARN] gnss_server timeout -- skipping. & goto skip_gnss )
+    %PYTHON% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',8001)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
+    if errorlevel 1 goto wait_8001
+    echo [  OK] gnss_server on :8001.
+) else (
+    echo [WARN] gnss_server.py not found -- skipping.
+)
+:skip_gnss
+
+:: ══════════════════════════════════════════════════════════════════════
+:: BLUETOOTH SCANNER
+:: Runs AFTER sweep -- both use PlutoSDR, they cannot share the device.
+:: The sweep targets 386 MHz. BT scanner retunes to 2.441 GHz.
+:: They take turns via sequential windows -- each tunes independently.
+:: If you have a second PlutoSDR, both can run simultaneously.
+:: ══════════════════════════════════════════════════════════════════════
+
+:: ── 9. bt_scanner.py ─────────────────────────────────────────────────
+if exist "%BASE%\bt_scanner.py" (
+    echo [CTW] Window 9 -- bt_scanner.py
+    echo [WARN] BT scanner shares PlutoSDR with sweep.
+    echo [WARN] Close CTW-sweep window first if both fail to tune.
+    start "CTW-bt" cmd /k "title CTW-bt && %PYTHON% %BASE%\bt_scanner.py --out %BASE% --rssi-threshold -75"
+    timeout /t 2 /nobreak >nul
+    echo [  OK] bt_scanner running.
+) else (
+    echo [WARN] bt_scanner.py not found -- skipping.
+)
+
+:: ══════════════════════════════════════════════════════════════════════
+:: CSS HUNTERS — run sequentially, not simultaneously.
+:: css_hunter.py    scans INSIDE licensed bands for active CSS.
+:: css_idle_hunter.py scans BETWEEN bands for parked/camping CSS.
+:: Both use PlutoSDR. If sweep is also running, they will contend.
+:: Recommended: run sweep on one PlutoSDR, CSS hunters on second.
+:: For single-device operation: stop sweep, run CSS hunters, restart.
+:: For now both are launched -- tune to your operational preference.
+:: ══════════════════════════════════════════════════════════════════════
+
+:: ── 10. css_hunter.py ────────────────────────────────────────────────
+if exist "%BASE%\css_hunter.py" (
+    echo [CTW] Window 10 -- css_hunter.py
+    start "CTW-css" cmd /k "title CTW-css && %PYTHON% %BASE%\css_hunter.py --out %BASE% --bands 2 4 5 12 13 66 71 --dwell-ms 20"
+    timeout /t 2 /nobreak >nul
+    echo [  OK] css_hunter running.
+) else (
+    echo [WARN] css_hunter.py not found -- skipping.
+)
+
+:: ── 11. css_idle_hunter.py ───────────────────────────────────────────
+if exist "%BASE%\css_idle_hunter.py" (
+    echo [CTW] Window 11 -- css_idle_hunter.py
+    start "CTW-css-idle" cmd /k "title CTW-css-idle && %PYTHON% %BASE%\css_idle_hunter.py --out %BASE% --sensitivity 10 --persist-min 3"
+    timeout /t 2 /nobreak >nul
+    echo [  OK] css_idle_hunter running.
+) else (
+    echo [WARN] css_idle_hunter.py not found -- skipping.
+)
+
+:: ══════════════════════════════════════════════════════════════════════
+:: OPEN BROWSERS
+:: ══════════════════════════════════════════════════════════════════════
+
+echo [CTW] Opening dashboards...
+timeout /t 2 /nobreak >nul
+start "" "http://localhost:8000/sweep.html"
+timeout /t 1 /nobreak >nul
+if exist "%BASE%\gnss_server.py" (
+    start "" "http://localhost:8001/gnss_map.html"
+)
+
+:: ══════════════════════════════════════════════════════════════════════
+:: STATUS
+:: ══════════════════════════════════════════════════════════════════════
+
+echo.
+echo  ================================================================
+echo   CTW SENTINEL PIPELINE -- ALL PROCESSES LAUNCHED
+echo.
+echo   WINDOW  TITLE              PURPOSE
+echo   ------  -----------------  -----------------------------------
+echo    1      CTW-gz_watch       gzip mirror watcher
+echo    2      CTW-live_reader    JSONL cursor server     :8080
+echo    3      CTW-rf_server      SSE broadcast           :8000
+echo    4      CTW-correlator     RF/Geiger correlator
+echo    5      CTW-sweep          PlutoSDR 386 MHz sweep
+echo    6      CTW-ublox_data     u-blox raw UBX capture
+echo    7      CTW-ublox          UBX binary parser
+echo    8      CTW-gnss           GNSS map server         :8001
+echo    9      CTW-bt             BT/BLE forensic scanner
+echo   10      CTW-css            CSS band scanner
+echo   11      CTW-css-idle       CSS idle/gap scanner
+echo.
+echo   DASHBOARDS
+echo   RF monitor  --  http://localhost:8000/sweep.html
+echo   GNSS map    --  http://localhost:8001/gnss_map.html
+echo.
+echo   NOTE: Windows 5 / 9 / 10 / 11 all use PlutoSDR.
+echo   Single device = they contend for tuning control.
+echo   Two PlutoSDR units = assign by URI:
+echo     --uri ip:192.168.2.1   (sweep + correlator)
+echo     --uri ip:192.168.3.1   (bt + css hunters)
+echo.
+echo   Run stop.bat to kill all processes.
+echo  ================================================================
+echo.
+pause

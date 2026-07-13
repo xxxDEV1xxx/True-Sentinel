@@ -1,0 +1,2 @@
+python C:\sdr\logs\css_hunter.py --out C:\sdr\logs --bands 2 4 5 12 13 66 71
+python C:\sdr\logs\css_hunter.py --out C:\sdr\logs --bands 66 2 71 4 5 --dwell-ms 50
