@@ -16,7 +16,7 @@ echo   CTW SENTINEL FORENSIC PLATFORM -- LAUNCH MENU
 echo   Advanced CT Research  
 echo  ================================================================
 echo.
-echo   INFRASTRUCTURE
+echo   Sentinel
 echo   [1]  gz_watch.py        gzip live mirror watcher
 echo   [2]  live_reader.py     JSONL cursor server          :8080
 echo   [3]  rf_server.py       SSE broadcast server         :8000
@@ -45,14 +45,14 @@ echo   [17] Open gnss_map.html http://localhost:8001/gnss_map.html
 echo   help                    Display command options
 echo.
 echo   PRESETS
-echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
-echo   [B]  CORE + SWEEP       Infrastructure + 386MHz sweep
-echo   [C]  CORE + CSS         Infrastructure + CSS hunters
-echo   [D]  CORE + BT          Infrastructure + Bluetooth
+echo   [A]  FULL               All Sentinel + sweep + GNSS + mmwave scan
+echo   [B]  CORE + SWEEP       Sentinel + 386MHz sweep
+echo   [C]  CORE + CSS         Sentinel + CSS hunters
+echo   [D]  CORE + BT          Sentinel + Bluetooth
 echo   [E]  GNSS ONLY          GNSS stack only
 echo   [F]  RF FULL            All RF scanners
 echo   [G]  mmWave ONLY        60GHz sensor passive scan (no calibration)
-echo   [S]  STOP ALL           Kill all CTW processes
+echo   [S]  STOP ALL           Kill all Sentinel processes
 echo   [Q]  QUIT               Exit
 echo   [H]  HELP               Display command options
 echo.
