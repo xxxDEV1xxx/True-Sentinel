@@ -605,7 +605,12 @@ def main():
     live_mirror.write(header)
 
     stop_event = threading.Event()
-
+    compass_rx = None
+    if args.compass_port:
+    host, port = args.compass_port.rsplit(':', 1)
+    compass_rx = CompassReceiver(host, int(port))
+    compass_rx.start()
+    print(f"[GNSS] Compass receiver: {args.compass_port}")
     try:
         tail_ubx(ubx_path, clock, gz_log, live_mirror, stop_event)
     except KeyboardInterrupt:
