@@ -1,10 +1,12 @@
 # True-Sentinel
 
+
 **Work in Progress** — Dual-aperture RF + EM forensic sensing system.
 
-Licensed under the [MIT License](LICENSE).  
-Copyright © 2026 Christopher T. Williams (xxxDEV1xxx).  
-Please attribute original work when using or forking.
+Licensed under the **GNU GPLv3**.  
+Copyright © 2026 Christopher T. Williams (xxxDEV1xxx).
+
+You are free to use, modify, and distribute this software **as long as** any derivative work is also released under GPLv3 (copyleft) and proper attribution is maintained.
 
 Open this file in Raw on Github to read proper format. 
 MINIMAL COMPONENTS
