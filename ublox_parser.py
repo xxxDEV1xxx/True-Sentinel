@@ -15,6 +15,11 @@ Parsed message classes:
   NAV-CLOCK  (0x01 0x22) — clock bias, drift
   MON-HW     (0x0A 0x09) — jamming indicator, AGC
   RXM-RAW    (0x02 0x10) — pseudoranges per satellite
+
+Compass integration:
+  CompassReceiver connects to compass_bridge.py on the Galaxy S7
+  via ADB-forwarded TCP and injects heading_deg into every
+  NAV-PVT record on the same ClockAnchor wall_ns epoch.
 """
 
 import argparse
@@ -30,24 +35,24 @@ import time
 from collections import deque
 from pathlib import Path
 
-# ── CONFIGURATION — change UBX_DIR to redirect parser ─────────────────────
-UBX_DIR      = r"C:\sdr\logs\UBLOX"          # directory to watch
-RUNTIME_DIR  = r"C:\sdr\logs\runtime"        # live mirror output
-POLL_INTERVAL_S  = 0.15                       # tail poll cadence
-SYNC_A, SYNC_B   = 0xB5, 0x62               # UBX frame sync bytes
+# ── CONFIGURATION ──────────────────────────────────────────────────────────
+UBX_DIR         = r"C:\sdr\logs\UBLOX"
+RUNTIME_DIR     = r"C:\sdr\logs\runtime"
+POLL_INTERVAL_S = 0.15
+SYNC_A, SYNC_B  = 0xB5, 0x62
 
 STAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # ── OOB guard ──────────────────────────────────────────────────────────────
 _OOB = {
-    "MAX_PAYLOAD":   4096,
-    "MAX_LAT":       90.0,
-    "MAX_LON":      180.0,
-    "MAX_ALT_M":  100000.0,
-    "MAX_SAT":       64,
-    "MAX_CNR":       60,
-    "MAX_AZ":       360,
-    "MAX_EL":        90,
+    "MAX_PAYLOAD": 4096,
+    "MAX_LAT":      90.0,
+    "MAX_LON":     180.0,
+    "MAX_ALT_M": 100000.0,
+    "MAX_SAT":      64,
+    "MAX_CNR":      60,
+    "MAX_AZ":      360,
+    "MAX_EL":       90,
 }
 
 def _cf(v, lo, hi):
@@ -65,7 +70,7 @@ def _ci(v, lo, hi):
         return max(lo, min(hi, i))
     except Exception: return None
 
-# ── ClockAnchor (same as pluto_sweep.py) ──────────────────────────────────
+# ── ClockAnchor ────────────────────────────────────────────────────────────
 class ClockAnchor:
     def __init__(self):
         best_gap = None
@@ -97,13 +102,13 @@ class ClockAnchor:
         ).strftime('%Y-%m-%dT%H:%M:%S')
         return f"{base}.{frac_ns:09d}Z"
 
-# ── GzipLog (same as pluto_sweep.py) ──────────────────────────────────────
+# ── GzipLog ────────────────────────────────────────────────────────────────
 class GzipLog:
     def __init__(self, path, header):
-        self.path   = path
-        self._q     = deque()
-        self._event = threading.Event()
-        self._stop  = threading.Event()
+        self.path    = path
+        self._q      = deque()
+        self._event  = threading.Event()
+        self._stop   = threading.Event()
         self._thread = threading.Thread(
             target=self._run, daemon=True,
             name=f'GzipLog:{os.path.basename(path)}'
@@ -138,7 +143,7 @@ class GzipLog:
         with gzip.open(self.path, 'ab', compresslevel=6) as gz:
             gz.write(blob)
 
-# ── Live JSONL mirror ──────────────────────────────────────────────────────
+# ── LiveMirror ─────────────────────────────────────────────────────────────
 class LiveMirror:
     def __init__(self, path):
         self.path  = path
@@ -152,6 +157,67 @@ class LiveMirror:
             with open(self.path, 'a', encoding='utf-8') as f:
                 f.write(line)
 
+# ── CompassReceiver ────────────────────────────────────────────────────────
+class CompassReceiver:
+    """
+    Receives compass heading from compass_bridge.py on Galaxy S7.
+    Connects via ADB-forwarded TCP: adb forward tcp:5556 tcp:5556
+    Injects heading_deg into every NAV-PVT record.
+    """
+
+    def __init__(self, host="localhost", port=5556):
+        self._host    = host
+        self._port    = port
+        self._heading = None
+        self._raw     = {}
+        self._lock    = threading.Lock()
+        self._stop    = threading.Event()
+        self._thread  = threading.Thread(
+            target=self._run, daemon=True, name="Compass-RX"
+        )
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        import socket
+        while not self._stop.is_set():
+            try:
+                s = socket.socket()
+                s.settimeout(5.0)
+                s.connect((self._host, self._port))
+                print(f"[Compass] Connected to {self._host}:{self._port}")
+                buf = ""
+                while not self._stop.is_set():
+                    chunk = s.recv(1024).decode('utf-8', errors='ignore')
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while '\n' in buf:
+                        line, buf = buf.split('\n', 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            with self._lock:
+                                self._heading = data.get("heading_deg")
+                                self._raw     = data
+                        except Exception:
+                            pass
+                s.close()
+            except Exception as e:
+                if not self._stop.is_set():
+                    print(f"[Compass] Reconnecting ({e})...")
+                    time.sleep(3)
+
+    def get_heading(self):
+        with self._lock:
+            return self._heading, dict(self._raw)
+
 # ── UBX frame parser ───────────────────────────────────────────────────────
 def ubx_checksum(payload_with_class_id_len):
     ck_a = ck_b = 0
@@ -161,10 +227,6 @@ def ubx_checksum(payload_with_class_id_len):
     return ck_a, ck_b
 
 class UBXFramer:
-    """
-    Stateful framer — feeds raw bytes and yields complete verified frames
-    as (cls_id, msg_id, payload_bytes).
-    """
     ST_SYNC1 = 0
     ST_SYNC2 = 1
     ST_CLS   = 2
@@ -216,70 +278,13 @@ class UBXFramer:
         elif s == self.ST_CK_B:
             self._state = self.ST_SYNC1
             check_data = bytes([self._cls, self._id,
-                                 self._len & 0xFF, (self._len >> 8) & 0xFF]
-                                ) + bytes(self._payload)
+                                 self._len & 0xFF,
+                                 (self._len >> 8) & 0xFF]
+                               ) + bytes(self._payload)
             exp_a, exp_b = ubx_checksum(check_data)
             if exp_a == self._ck_a and exp_b == byte:
                 yield (self._cls, self._id, bytes(self._payload))
-#GPS
-class CompassReceiver:
-    """
-    Receives compass heading from compass_bridge.py running on phone.
-    Connects via ADB-forwarded TCP (adb forward tcp:5556 tcp:5556).
-    Adds heading_deg to every NAV-PVT record written to gnss_live.jsonl.
-    """
 
-    def __init__(self, host="localhost", port=5556):
-        self._host    = host
-        self._port    = port
-        self._heading = None
-        self._raw     = {}
-        self._lock    = threading.Lock()
-        self._stop    = threading.Event()
-        self._thread  = threading.Thread(
-            target=self._run, daemon=True, name="Compass-RX"
-        )
-
-    def start(self):
-        self._thread.start()
-
-    def stop(self):
-        self._stop.set()
-
-    def _run(self):
-        while not self._stop.is_set():
-            try:
-                import socket
-                s = socket.socket()
-                s.settimeout(5.0)
-                s.connect((self._host, self._port))
-                print(f"[Compass] Connected to {self._host}:{self._port}")
-                buf = ""
-                while not self._stop.is_set():
-                    chunk = s.recv(1024).decode('utf-8', errors='ignore')
-                    if not chunk:
-                        break
-                    buf += chunk
-                    while '\n' in buf:
-                        line, buf = buf.split('\n', 1)
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                            with self._lock:
-                                self._heading = data.get("heading_deg")
-                                self._raw     = data
-                        except Exception:
-                            pass
-                s.close()
-            except Exception as e:
-                print(f"[Compass] Reconnecting: {e}")
-                time.sleep(3)
-
-    def get_heading(self):
-        with self._lock:
-            return self._heading, dict(self._raw)
 # ── Message decoders ───────────────────────────────────────────────────────
 
 GNSS_ID_NAMES = {
@@ -288,12 +293,17 @@ GNSS_ID_NAMES = {
 }
 
 SPOOF_STATES = {
-    0: 'unknown', 1: 'no_spoofing',
+    0: 'unknown',           1: 'no_spoofing',
     2: 'spoofing_indicated', 3: 'multiple_spoofing'
 }
 
 
-def decode_nav_pvt(payload, clock, wall_ns, mono_ns):
+def decode_nav_pvt(payload, clock, wall_ns, mono_ns,
+                   compass_rx=None):
+    """
+    NAV-PVT decoder. Injects compass heading if CompassReceiver
+    is active and has a current reading.
+    """
     if len(payload) < 84: return None
     (iTOW, year, month, day, hour, minute, second,
      valid, tAcc, nano, fixType, flags, flags2, numSV,
@@ -308,75 +318,82 @@ def decode_nav_pvt(payload, clock, wall_ns, mono_ns):
     hacc = _cf(hAcc     * 1e-3,    0.0, 50000.0)
     vacc = _cf(vAcc     * 1e-3,    0.0, 50000.0)
 
-    gps_fix_ok    = bool(flags & 0x01)
-    diff_soln     = bool(flags & 0x02)
-    psm_state     = (flags >> 2) & 0x07
-    head_veh_valid= bool(flags & 0x20)
-    carr_soln     = (flags >> 6) & 0x03
+    gps_fix_ok = bool(flags & 0x01)
+    diff_soln  = bool(flags & 0x02)
+    carr_soln  = (flags >> 6) & 0x03
 
-    fix_names = {0:'no_fix',1:'dead_reck',2:'2D',3:'3D',
-                 4:'gnss_dead_reck',5:'time_only'}
-
-    return {
-        "type":         "NAV-PVT",
-        "wall_ns":      wall_ns,
-        "wall_iso":     clock.format_wall_ns(wall_ns),
-        "mono_ns":      mono_ns,
-        "iTOW":         iTOW,
-        "year":         year, "month": month, "day": day,
-        "hour":         hour, "minute": minute, "second": second,
-        "fixType":      fixType,
-        "fix_name":     fix_names.get(fixType, "unknown"),
-        "gps_fix_ok":   gps_fix_ok,
-        "diff_soln":    diff_soln,
-        "carr_soln":    carr_soln,
-        "numSV":        _ci(numSV, 0, _OOB["MAX_SAT"]),
-        "lat":          lat,
-        "lon":          lon,
-        "alt_m":        alt,
-        "h_acc_m":      hacc,
-        "v_acc_m":      vacc,
-        "vel_n_mm":     velN,
-        "vel_e_mm":     velE,
-        "vel_d_mm":     velD,
-        "g_speed_mm":   gSpeed,
-        "p_dop":        _cf(pDOP * 0.01, 0, 99.99),
-        "t_acc_ns":     tAcc,
-        "nano":         nano,
-        "valid_date":   bool(valid & 0x01),
-        "valid_time":   bool(valid & 0x02),
-        "fully_resolved": bool(valid & 0x04),
-        "valid_mag":    bool(valid & 0x08),
+    fix_names = {
+        0: 'no_fix', 1: 'dead_reck', 2: '2D',
+        3: '3D',     4: 'gnss_dead_reck', 5: 'time_only'
     }
+
+    rec = {
+        "type":           "NAV-PVT",
+        "wall_ns":        wall_ns,
+        "wall_iso":       clock.format_wall_ns(wall_ns),
+        "mono_ns":        mono_ns,
+        "iTOW":           iTOW,
+        "year":           year,  "month":  month,  "day":    day,
+        "hour":           hour,  "minute": minute, "second": second,
+        "fixType":        fixType,
+        "fix_name":       fix_names.get(fixType, "unknown"),
+        "gps_fix_ok":     gps_fix_ok,
+        "diff_soln":      diff_soln,
+        "carr_soln":      carr_soln,
+        "numSV":          _ci(numSV, 0, _OOB["MAX_SAT"]),
+        "lat":            lat,
+        "lon":            lon,
+        "alt_m":          alt,
+        "h_acc_m":        hacc,
+        "v_acc_m":        vacc,
+        "vel_n_mm":       velN,
+        "vel_e_mm":       velE,
+        "vel_d_mm":       velD,
+        "g_speed_mm":     gSpeed,
+        "p_dop":          _cf(pDOP * 0.01, 0, 99.99),
+        "t_acc_ns":       tAcc,
+        "nano":           nano,
+        "valid_date":     bool(valid & 0x01),
+        "valid_time":     bool(valid & 0x02),
+        "fully_resolved": bool(valid & 0x04),
+        "valid_mag":      bool(valid & 0x08),
+    }
+
+    # ── Inject compass heading if available ───────────────────────────────
+    if compass_rx is not None:
+        heading, compass_raw = compass_rx.get_heading()
+        if heading is not None:
+            rec["compass_heading_deg"] = heading
+            rec["compass_declination"] = compass_raw.get("declination")
+            rec["compass_x_gauss"]     = compass_raw.get("x_gauss")
+            rec["compass_y_gauss"]     = compass_raw.get("y_gauss")
+            rec["compass_mode"]        = compass_raw.get("mode")
+            rec["compass_ts_ns"]       = compass_raw.get("ts_ns")
+
+    return rec
 
 
 def decode_nav_status(payload, clock, wall_ns, mono_ns):
     if len(payload) < 16: return None
     iTOW, gpsFix, flags, fixStat, flags2, ttff, msss = \
         struct.unpack_from('<IBBBBll', payload, 0)
-
-    gps_fix_ok   = bool(flags & 0x01)
-    diff_soln    = bool(flags & 0x02)
-    wkn_set      = bool(flags & 0x04)
-    tow_set      = bool(flags & 0x08)
-    spoof_raw    = (flags2 >> 3) & 0x03
-
+    spoof_raw = (flags2 >> 3) & 0x03
     return {
-        "type":          "NAV-STATUS",
-        "wall_ns":       wall_ns,
-        "wall_iso":      clock.format_wall_ns(wall_ns),
-        "mono_ns":       mono_ns,
-        "iTOW":          iTOW,
-        "gpsFix":        gpsFix,
-        "gps_fix_ok":    gps_fix_ok,
-        "diff_soln":     diff_soln,
-        "wkn_set":       wkn_set,
-        "tow_set":       tow_set,
-        "spoof_raw":     spoof_raw,
-        "spoof_state":   SPOOF_STATES.get(spoof_raw, "unknown"),
-        "spoofing":      spoof_raw >= 2,
-        "ttff_ms":       ttff,
-        "msss":          msss,
+        "type":         "NAV-STATUS",
+        "wall_ns":      wall_ns,
+        "wall_iso":     clock.format_wall_ns(wall_ns),
+        "mono_ns":      mono_ns,
+        "iTOW":         iTOW,
+        "gpsFix":       gpsFix,
+        "gps_fix_ok":   bool(flags & 0x01),
+        "diff_soln":    bool(flags & 0x02),
+        "wkn_set":      bool(flags & 0x04),
+        "tow_set":      bool(flags & 0x08),
+        "spoof_raw":    spoof_raw,
+        "spoof_state":  SPOOF_STATES.get(spoof_raw, "unknown"),
+        "spoofing":     spoof_raw >= 2,
+        "ttff_ms":      ttff,
+        "msss":         msss,
     }
 
 
@@ -384,34 +401,25 @@ def decode_nav_sat(payload, clock, wall_ns, mono_ns):
     if len(payload) < 8: return None
     iTOW, version, numSvs = struct.unpack_from('<IBB', payload, 0)
     numSvs = _ci(numSvs, 0, _OOB["MAX_SAT"])
-    sats = []
+    sats   = []
     offset = 8
     for _ in range(numSvs):
         if offset + 12 > len(payload): break
         gnssId, svId, cno, elev, azim_raw, prRes_raw, flags_sv = \
             struct.unpack_from('<BBBbhhi', payload, offset)
         offset += 12
-        quality  = flags_sv & 0x07
-        sv_used  = bool(flags_sv & 0x08)
-        health   = (flags_sv >> 4) & 0x03
-        diffCorr = bool(flags_sv & 0x40)
-        smoothed = bool(flags_sv & 0x80)
-        orb_src  = (flags_sv >> 8) & 0x07
-        eph_avail= bool(flags_sv & 0x0800)
-        alm_avail= bool(flags_sv & 0x1000)
-        ano_avail= bool(flags_sv & 0x2000)
         sats.append({
             "gnssId":    gnssId,
             "gnss_name": GNSS_ID_NAMES.get(gnssId, f"GNSS{gnssId}"),
             "svId":      svId,
-            "cno":       _ci(cno,  0, _OOB["MAX_CNR"]),
-            "elev_deg":  _ci(elev, -90, 90),
+            "cno":       _ci(cno,     0, _OOB["MAX_CNR"]),
+            "elev_deg":  _ci(elev,  -90, 90),
             "azim_deg":  _ci(azim_raw, 0, 360),
             "pr_res_m":  _cf(prRes_raw * 0.1, -9999, 9999),
-            "quality":   quality,
-            "sv_used":   sv_used,
-            "health":    health,
-            "eph_avail": eph_avail,
+            "quality":   flags_sv & 0x07,
+            "sv_used":   bool(flags_sv & 0x08),
+            "health":    (flags_sv >> 4) & 0x03,
+            "eph_avail": bool(flags_sv & 0x0800),
         })
     return {
         "type":    "NAV-SAT",
@@ -428,11 +436,11 @@ def decode_nav_clock(payload, clock, wall_ns, mono_ns):
     if len(payload) < 20: return None
     iTOW, clkB, clkD, tAcc, fAcc = struct.unpack_from('<Iiill', payload, 0)
     return {
-        "type":      "NAV-CLOCK",
-        "wall_ns":   wall_ns,
-        "wall_iso":  clock.format_wall_ns(wall_ns),
-        "mono_ns":   mono_ns,
-        "iTOW":      iTOW,
+        "type":         "NAV-CLOCK",
+        "wall_ns":      wall_ns,
+        "wall_iso":     clock.format_wall_ns(wall_ns),
+        "mono_ns":      mono_ns,
+        "iTOW":         iTOW,
         "clk_bias_ns":  clkB,
         "clk_drift_ns": clkD,
         "t_acc_ns":     tAcc,
@@ -447,16 +455,16 @@ def decode_mon_hw(payload, clock, wall_ns, mono_ns):
      jamInd, _, pinIrq, pullH, pullL) = struct.unpack_from(
         '<IIIIHHBBBBIb17sBIII', payload, 0)
     return {
-        "type":       "MON-HW",
-        "wall_ns":    wall_ns,
-        "wall_iso":   clock.format_wall_ns(wall_ns),
-        "mono_ns":    mono_ns,
+        "type":         "MON-HW",
+        "wall_ns":      wall_ns,
+        "wall_iso":     clock.format_wall_ns(wall_ns),
+        "mono_ns":      mono_ns,
         "noise_per_ms": noisePerMS,
-        "agc_cnt":    agcCnt,
-        "jam_ind":    _ci(jamInd, 0, 255),
-        "jam_state":  (flags_hw >> 2) & 0x03,
-        "ant_status": aStatus,
-        "ant_power":  aPower,
+        "agc_cnt":      agcCnt,
+        "jam_ind":      _ci(jamInd, 0, 255),
+        "jam_state":    (flags_hw >> 2) & 0x03,
+        "ant_status":   aStatus,
+        "ant_power":    aPower,
     }
 
 
@@ -464,7 +472,7 @@ def decode_rxm_raw(payload, clock, wall_ns, mono_ns):
     if len(payload) < 8: return None
     rcvTow, week, leapS, numMeas, recStat = \
         struct.unpack_from('<dHbBB', payload, 0)
-    meas = []
+    meas   = []
     offset = 16
     for _ in range(min(numMeas, _OOB["MAX_SAT"])):
         if offset + 32 > len(payload): break
@@ -473,15 +481,15 @@ def decode_rxm_raw(payload, clock, wall_ns, mono_ns):
             struct.unpack_from('<ddfBBBBHBBBBBB', payload, offset)
         offset += 32
         meas.append({
-            "gnssId":   gnssId,
-            "gnss_name":GNSS_ID_NAMES.get(gnssId, f"GNSS{gnssId}"),
-            "svId":     svId,
-            "pr_m":     round(prMes, 4) if abs(prMes) < 1e12 else None,
-            "cp_cycles":round(cpMes, 6) if abs(cpMes) < 1e12 else None,
-            "doppler_hz":round(doMes, 4),
-            "cno":      _ci(cno, 0, _OOB["MAX_CNR"]),
-            "locktime_ms": locktime,
-            "trkStat":  trkStat,
+            "gnssId":     gnssId,
+            "gnss_name":  GNSS_ID_NAMES.get(gnssId, f"GNSS{gnssId}"),
+            "svId":       svId,
+            "pr_m":       round(prMes, 4) if abs(prMes) < 1e12 else None,
+            "cp_cycles":  round(cpMes, 6) if abs(cpMes) < 1e12 else None,
+            "doppler_hz": round(doMes, 4),
+            "cno":        _ci(cno, 0, _OOB["MAX_CNR"]),
+            "locktime_ms":locktime,
+            "trkStat":    trkStat,
         })
     return {
         "type":     "RXM-RAW",
@@ -509,16 +517,21 @@ DECODERS = {
 
 def find_latest_ubx(directory):
     pattern = os.path.join(directory, "*.ubx")
-    files = glob.glob(pattern)
-    if not files:
-        return None
+    files   = glob.glob(pattern)
+    if not files: return None
     return max(files, key=os.path.getmtime)
 
 
-def tail_ubx(ubx_path, clock, gz_log, live_mirror, stop_event):
-    framer   = UBXFramer()
-    offset   = 0
-    seq      = 0
+def tail_ubx(ubx_path, clock, gz_log, live_mirror,
+             stop_event, compass_rx=None):
+    """
+    Tail the .ubx binary file and decode frames.
+    compass_rx is passed into decode_nav_pvt so heading is
+    injected at the record level on the same wall_ns timestamp.
+    """
+    framer = UBXFramer()
+    offset = 0
+    seq    = 0
 
     print(f"[UBX] Tailing: {ubx_path}")
 
@@ -532,13 +545,22 @@ def tail_ubx(ubx_path, clock, gz_log, live_mirror, stop_event):
                     for cls_id, msg_id, payload in framer.feed(chunk):
                         wall_ns, mono_ns = clock.now()
                         decoder = DECODERS.get((cls_id, msg_id))
-                        if decoder:
+                        if decoder is None:
+                            continue
+
+                        # NAV-PVT gets compass_rx for heading injection
+                        if (cls_id, msg_id) == (0x01, 0x07):
+                            rec = decoder(payload, clock, wall_ns, mono_ns,
+                                          compass_rx=compass_rx)
+                        else:
                             rec = decoder(payload, clock, wall_ns, mono_ns)
-                            if rec:
-                                seq += 1
-                                rec["seq"] = seq
-                                gz_log.write(rec)
-                                live_mirror.write(rec)
+
+                        if rec:
+                            seq += 1
+                            rec["seq"] = seq
+                            gz_log.write(rec)
+                            live_mirror.write(rec)
+
         except Exception as e:
             print(f"[UBX] tail error: {e}")
 
@@ -549,12 +571,17 @@ def tail_ubx(ubx_path, clock, gz_log, live_mirror, stop_event):
 
 def main():
     ap = argparse.ArgumentParser(description="CTW UBX Binary Forensic Parser")
-    ap.add_argument("--ubx-dir", default=UBX_DIR,
+    ap.add_argument("--ubx-dir",      default=UBX_DIR,
                     help=f"Directory containing .ubx files (default: {UBX_DIR})")
-    ap.add_argument("--ubx-file", default=None,
+    ap.add_argument("--ubx-file",     default=None,
                     help="Exact .ubx file path (overrides --ubx-dir)")
-    ap.add_argument("--out", default=None,
+    ap.add_argument("--out",          default=None,
                     help="Output directory for .jsonl.gz (default: ubx-dir)")
+    ap.add_argument("--compass-port", default=None,
+                    metavar="HOST:PORT",
+                    help="Compass bridge address e.g. localhost:5556 "
+                         "(run compass_bridge.py on phone + "
+                         "adb forward tcp:5556 tcp:5556)")
     args = ap.parse_args()
 
     ubx_dir = args.ubx_dir
@@ -568,14 +595,6 @@ def main():
         print("      Start ublox_data.py first, then run this parser.")
         sys.exit(1)
 
-    print(f"\n{'='*62}")
-    print(f"  CTW UBX FORENSIC PARSER")
-    print(f"{'='*62}")
-    print(f"  UBX source    : {ubx_path}")
-    print(f"  Output dir    : {out_dir}")
-    print(f"  Runtime dir   : {RUNTIME_DIR}")
-    print(f"{'='*62}\n")
-
     clock = ClockAnchor()
 
     from ntp_web import get_ntp_info
@@ -584,45 +603,69 @@ def main():
     print(f"  Source  : {ntp_info['ntp_source']}")
     print(f"  Offset  : {ntp_info.get('ntp_offset_ms','?')} ms")
 
-    header = {
-        "type":              "gnss_session_header",
-        "session_wall_utc":  clock.session_wall_utc,
-        "session_wall_ns":   clock.session_wall_ns,
-        "session_mono_ns":   clock.session_mono_ns,
-        "ntp_source":        ntp_info["ntp_source"],
-        "ntp_offset_s":      ntp_info["ntp_offset_s"],
-        "ntp_offset_ms":     ntp_info.get("ntp_offset_ms"),
-        "ubx_source":        ubx_path,
-        "stamp":             STAMP,
-    }
-
-    gz_path      = os.path.join(out_dir, f"gnss_{STAMP}.jsonl.gz")
-    live_path    = os.path.join(RUNTIME_DIR, "gnss_live.jsonl")
-
-    gz_log       = GzipLog(gz_path, header)
-    live_mirror  = LiveMirror(live_path)
-
-    live_mirror.write(header)
-
-    stop_event = threading.Event()
+    # ── Compass receiver (optional) ────────────────────────────────────────
     compass_rx = None
     if args.compass_port:
-    host, port = args.compass_port.rsplit(':', 1)
-    compass_rx = CompassReceiver(host, int(port))
-    compass_rx.start()
-    print(f"[GNSS] Compass receiver: {args.compass_port}")
+        try:
+            host, port_str = args.compass_port.rsplit(':', 1)
+            compass_rx = CompassReceiver(host, int(port_str))
+            compass_rx.start()
+            print(f"[GNSS] Compass receiver started: {args.compass_port}")
+            print(f"[GNSS] Setup: adb forward tcp:5556 tcp:5556")
+            print(f"[GNSS] Phone: python compass_bridge.py")
+        except Exception as e:
+            print(f"[GNSS] Compass receiver failed to start: {e}")
+            compass_rx = None
+
+    header = {
+        "type":            "gnss_session_header",
+        "session_wall_utc":clock.session_wall_utc,
+        "session_wall_ns": clock.session_wall_ns,
+        "session_mono_ns": clock.session_mono_ns,
+        "ntp_source":      ntp_info["ntp_source"],
+        "ntp_offset_s":    ntp_info["ntp_offset_s"],
+        "ntp_offset_ms":   ntp_info.get("ntp_offset_ms"),
+        "ubx_source":      ubx_path,
+        "compass_enabled": compass_rx is not None,
+        "compass_port":    args.compass_port,
+        "stamp":           STAMP,
+    }
+
+    gz_path    = os.path.join(out_dir,     f"gnss_{STAMP}.jsonl.gz")
+    live_path  = os.path.join(RUNTIME_DIR, "gnss_live.jsonl")
+
+    gz_log      = GzipLog(gz_path, header)
+    live_mirror = LiveMirror(live_path)
+    live_mirror.write(header)
+
+    print(f"\n{'='*62}")
+    print(f"  CTW UBX FORENSIC PARSER")
+    print(f"{'='*62}")
+    print(f"  UBX source    : {ubx_path}")
+    print(f"  Output dir    : {out_dir}")
+    print(f"  Runtime dir   : {RUNTIME_DIR}")
+    print(f"  Compass       : {'ACTIVE ' + args.compass_port if compass_rx else 'disabled'}")
+    print(f"{'='*62}\n")
+
+    stop_event = threading.Event()
+
     try:
-        tail_ubx(ubx_path, clock, gz_log, live_mirror, stop_event)
+        tail_ubx(ubx_path, clock, gz_log, live_mirror,
+                 stop_event, compass_rx=compass_rx)
     except KeyboardInterrupt:
         pass
     finally:
         stop_event.set()
+
+        if compass_rx:
+            compass_rx.stop()
+
         wall_ns, mono_ns = clock.now()
         end = {
-            "type":     "session_end",
-            "wall_ns":  wall_ns,
-            "wall_iso": clock.format_wall_ns(wall_ns),
-            "mono_ns":  mono_ns,
+            "type":    "session_end",
+            "wall_ns": wall_ns,
+            "wall_iso":clock.format_wall_ns(wall_ns),
+            "mono_ns": mono_ns,
         }
         gz_log.write(end)
         live_mirror.write(end)
