@@ -221,7 +221,65 @@ class UBXFramer:
             exp_a, exp_b = ubx_checksum(check_data)
             if exp_a == self._ck_a and exp_b == byte:
                 yield (self._cls, self._id, bytes(self._payload))
+#GPS
+class CompassReceiver:
+    """
+    Receives compass heading from compass_bridge.py running on phone.
+    Connects via ADB-forwarded TCP (adb forward tcp:5556 tcp:5556).
+    Adds heading_deg to every NAV-PVT record written to gnss_live.jsonl.
+    """
 
+    def __init__(self, host="localhost", port=5556):
+        self._host    = host
+        self._port    = port
+        self._heading = None
+        self._raw     = {}
+        self._lock    = threading.Lock()
+        self._stop    = threading.Event()
+        self._thread  = threading.Thread(
+            target=self._run, daemon=True, name="Compass-RX"
+        )
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                import socket
+                s = socket.socket()
+                s.settimeout(5.0)
+                s.connect((self._host, self._port))
+                print(f"[Compass] Connected to {self._host}:{self._port}")
+                buf = ""
+                while not self._stop.is_set():
+                    chunk = s.recv(1024).decode('utf-8', errors='ignore')
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while '\n' in buf:
+                        line, buf = buf.split('\n', 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            with self._lock:
+                                self._heading = data.get("heading_deg")
+                                self._raw     = data
+                        except Exception:
+                            pass
+                s.close()
+            except Exception as e:
+                print(f"[Compass] Reconnecting: {e}")
+                time.sleep(3)
+
+    def get_heading(self):
+        with self._lock:
+            return self._heading, dict(self._raw)
 # ── Message decoders ───────────────────────────────────────────────────────
 
 GNSS_ID_NAMES = {
