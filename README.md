@@ -1,4 +1,11 @@
 # True-Sentinel
+
+**Work in Progress** — Dual-aperture RF + EM forensic sensing system.
+
+Licensed under the [MIT License](LICENSE).  
+Copyright © 2026 Christopher T. Williams (xxxDEV1xxx).  
+Please attribute original work when using or forking.
+
 Open this file in Raw on Github to read proper format. 
 MINIMAL COMPONENTS
 ADALM-PLUTO Rev.C (Z7010-AD9361 fw v0.38)   ✓ confirmed working
