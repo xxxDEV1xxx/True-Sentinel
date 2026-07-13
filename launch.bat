@@ -13,10 +13,10 @@ cls
 echo.
 echo  ================================================================
 echo   CTW SENTINEL FORENSIC PLATFORM -- LAUNCH MENU
-echo   Advanced CT Research  
+echo   Advanced CT Research
 echo  ================================================================
 echo.
-echo   Sentinel
+echo   INFRASTRUCTURE
 echo   [1]  gz_watch.py        gzip live mirror watcher
 echo   [2]  live_reader.py     JSONL cursor server          :8080
 echo   [3]  rf_server.py       SSE broadcast server         :8000
@@ -42,17 +42,16 @@ echo.
 echo   DASHBOARDS
 echo   [16] Open sweep.html    http://localhost:8000/sweep.html
 echo   [17] Open gnss_map.html http://localhost:8001/gnss_map.html
-echo   help                    Display command options
 echo.
 echo   PRESETS
-echo   [A]  FULL               All Sentinel + sweep + GNSS + mmwave scan
-echo   [B]  CORE + SWEEP       Sentinel + 386MHz sweep
-echo   [C]  CORE + CSS         Sentinel + CSS hunters
-echo   [D]  CORE + BT          Sentinel + Bluetooth
+echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
+echo   [B]  CORE + SWEEP       Infrastructure + 386MHz sweep
+echo   [C]  CORE + CSS         Infrastructure + CSS hunters
+echo   [D]  CORE + BT          Infrastructure + Bluetooth
 echo   [E]  GNSS ONLY          GNSS stack only
 echo   [F]  RF FULL            All RF scanners
 echo   [G]  mmWave ONLY        60GHz sensor passive scan (no calibration)
-echo   [S]  STOP ALL           Kill all Sentinel processes
+echo   [S]  STOP ALL           Kill all CTW processes
 echo   [Q]  QUIT               Exit
 echo   [H]  HELP               Display command options
 echo.
@@ -153,13 +152,17 @@ echo        --out DIR          output directory
 echo        --adv-only         advertising channels only
 echo        Default: --out %BASE% --rssi-threshold -75
 echo.
-echo   [7]  css_hunter.py
-echo        --uri URI          PlutoSDR URI
+echo   [7]  css_hunter.py      CSS band scanner (active cells + modem AT)
+echo        --uri URI          PlutoSDR URI (default ip:192.168.2.1)
 echo        --bands N [N]      LTE band numbers (default 2 4 5 12 13 66 71)
-echo        --dwell-ms MS      dwell per window (default 20)
+echo        --dwell-ms MS      dwell per window ms (default 20)
 echo        --anomaly-db DB    dB above noise to flag (default 12)
 echo        --no-pss           disable PSS ZC correlation
+echo        --no-sdr           AT layer only, no PlutoSDR
+echo        --no-at            SDR layer only, no modem AT
+echo        --at-port X        modem AT port (COM8, /dev/ttyUSB2, host:port)
 echo        --target-earfcn N  force scan specific EARFCNs
+echo        --verify-chain     verify SHA-256 chain of previous session
 echo        --out DIR          output directory
 echo        Default: --out %BASE% --bands 2 4 5 12 13 66 71 --dwell-ms 20
 echo.
@@ -395,16 +398,49 @@ cls
 echo  [7] css_hunter.py
 echo  ----------------------------------------------------------------
 echo  Purpose : Cell Site Simulator active band scanner.
-echo            Scans INSIDE licensed cellular DL bands.
-echo            Detects: energy anomalies, PSS ZC correlation,
-echo                     band boundary violations (IOC EARFCNs),
-echo                     RSSI jockeying, phantom EARFCNs.
-echo            IOC table includes your confirmed field evidence:
-echo              TAC 65535, EARFCN 66586, EARFCN 1538, PCI 242,
-echo              eNB 44319, ECI 268435455, ZC root u=34.
+echo            Two detection layers running simultaneously:
+echo.
+echo            LAYER 1 -- SDR RF (PlutoSDR)
+echo              Energy anomaly above band noise floor
+echo              PSS Zadoff-Chu correlation (ZC root u=34 = PCI 242 IOC)
+echo              Band boundary violations (EARFCN above/below legal range)
+echo              RSSI jockeying (competing signals on same EARFCN)
+echo              Phantom EARFCN detection (no CellMapper match)
+echo.
+echo            LAYER 2 -- Rogue Tower Scoring Engine (from rogue_tower_hunter.c)
+echo              GSM cipher downgrade scoring:
+echo                A5/0 no encryption    +60  ROGUE
+echo                A5/2 globally banned  +65  ROGUE
+echo                A5/1 breakable        +20  SUSPECT
+echo              Timing advance anomaly (TA=0 + strong signal)
+echo              Empty BA list (no neighbours = standalone rogue)
+echo              LAC/TAC change detection
+echo              eNB ID below 100 (factory default = rogue equipment)
+echo              EARFCN vs band mismatch
+echo              PCI collision across eNBs
+echo              Emergency-only attach
+echo              RSRQ degradation (jammer interference)
+echo              PCI on multiple EARFCNs
+echo.
+echo            IOC table from CTW-11 field evidence:
+echo              TAC 65535 / TAC 0      -- 3GPP reserved, confirmed CSS
+echo              EARFCN 66586           -- above Band 66 ceiling
+echo              EARFCN 1538            -- outside US licensed allocations
+echo              EARFCN 1000            -- Band 2 phantom
+echo              EARFCN 68911           -- Band 71 PCI collision
+echo              PCI 242                -- confirmed rogue, ZC root u=34
+echo              PCI 186                -- Band 71 rogue
+echo              eNB 44319              -- ghost alongside eNB 44131
+echo              ECI 268435455          -- INT32_MAX sentinel
+echo.
+echo            Evidence chain:
+echo              Every ROGUE/SUSPECT event is SHA-256 chain-linked.
+echo              Chain log is Daubert-compatible and tamper-evident.
+echo              Verify with --verify-chain after session.
 echo.
 echo  Args:
 echo    --uri URI          PlutoSDR URI
+echo                       Default: ip:192.168.2.1
 echo    --bands N [N]      LTE band numbers to scan
 echo                       Default: 2 4 5 12 13 66 71
 echo                       Available: 2 4 5 12 13 17 25 26 41 66 71
@@ -412,14 +448,57 @@ echo    --dwell-ms MS      Dwell per frequency window ms
 echo                       Default: 20
 echo    --anomaly-db DB    dB above noise floor to flag
 echo                       Default: 12
-echo    --no-pss           Disable PSS ZC correlation (faster)
+echo    --no-pss           Disable PSS ZC correlation (faster sweep)
+echo    --no-sdr           Disable PlutoSDR -- run AT modem layer only
+echo                       Use when PlutoSDR is occupied by pluto_sweep
+echo    --no-at            Disable modem AT -- run SDR layer only
+echo    --at-port X        Modem AT interface
+echo                       Direct serial:  COM8  or  /dev/ttyUSB2
+echo                       ADB forwarded:  localhost:5555
+echo                       Setup ADB:      adb forward tcp:5555
+echo                                           localabstract:modem_at
+echo                       NetHunter:      run rogue_tower_hunter on phone,
+echo                                       connect via ADB TCP from PC
 echo    --target-earfcn N  Force scan specific EARFCNs only
+echo                       Overrides --bands for targeted IOC monitoring
+echo    --verify-chain     Replay and verify SHA-256 chain of previous
+echo                       session evidence logs -- exits after verify
 echo    --out DIR          Output directory
+echo                       Default: %BASE%
+echo.
+echo  Output files per session:
+echo    css_STAMP.jsonl.gz         compressed forensic log (all events)
+echo    css_evidence_STAMP.log     SHA-256 chain evidence (ROGUE/SUSPECT)
+echo    css_chain_STAMP.log        chain verification log (SEQ+hashes)
+echo    runtime/css_live.jsonl     live SSE mirror for dashboard
+echo.
+echo  Verdict thresholds (from rogue_tower_hunter.c):
+echo    score >= 60  =  ROGUE    (written to evidence chain)
+echo    score >= 30  =  SUSPECT  (written to evidence chain)
+echo    score  < 30  =  CLEAN    (logged only)
 echo.
 echo  Examples:
-echo    7,--bands 66 2 71 --dwell-ms 50
-echo    7,--target-earfcn 66586 1538 1000
-echo    7,--no-pss --bands 2 4 5
+echo    SDR + modem AT on COM8:
+echo      7,--bands 2 4 5 12 13 66 71 --at-port COM8
+echo.
+echo    SDR only (PlutoSDR on second unit, AT unavailable):
+echo      7,--no-at --bands 66 2 71 --dwell-ms 50
+echo.
+echo    AT only (PlutoSDR busy with sweep, phone on COM8):
+echo      7,--no-sdr --at-port COM8
+echo.
+echo    Targeted IOC EARFCNs:
+echo      7,--target-earfcn 66586 1538 1000 --at-port COM8
+echo.
+echo    Verify previous session chain:
+echo      7,--verify-chain
+echo.
+echo    Full session with ADB-forwarded NetHunter:
+echo      7,--bands 2 4 5 12 13 66 71 --at-port localhost:5555
+echo         --dwell-ms 30 --anomaly-db 10 --out C:\sdr\logs
+echo.
+echo  Chain verification (standalone):
+echo    python css_hunter.py --verify-chain --out C:\sdr\logs
 pause & goto menu
 
 :show_help_8
