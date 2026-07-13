@@ -1,7 +1,7 @@
 ================================================================================
   CTW SENTINEL — FORENSIC RF INSTRUMENTATION PLATFORM
   Instructions and Setup Guide
-  Advanced CTW Research | USPTO 19/466,387
+  Advanced CT Research | USPTO 19/466,387
   FCC Complaint #8740730 | NRC #1456745
 ================================================================================
 
