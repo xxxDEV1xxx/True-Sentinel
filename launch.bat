@@ -605,6 +605,10 @@ echo                       Default: %BASE%\UBLOX
 echo.
 echo  Example:
 echo    10,--ubx-dir C:\GNSS_Evidence --out %BASE%\UBLOX
+echo    --compass-port HOST:PORT  receive heading from phone compass bridge
+echo                              Setup: python compass_bridge.py on phone
+echo                                     adb forward tcp:5556 tcp:5556
+echo    Example: 10,--compass-port localhost:5556
 pause & goto menu
 
 :show_help_11
