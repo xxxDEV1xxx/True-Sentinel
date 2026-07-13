@@ -42,6 +42,7 @@ echo.
 echo   DASHBOARDS
 echo   [16] Open sweep.html    http://localhost:8000/sweep.html
 echo   [17] Open gnss_map.html http://localhost:8001/gnss_map.html
+echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
 echo.
 echo   PRESETS
 echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
@@ -231,6 +232,12 @@ echo.
 echo   [17] Opens http://localhost:8001/gnss_map.html in browser.
 echo        No arguments.
 echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
+echo        --log PATH         specific gnss_*.jsonl.gz to analyze
+echo        --all-logs         process all logs in output directory
+echo        --ground-truth LAT,LON  static receiver position
+echo        --out DIR          log directory
+echo        Default: latest gnss log in %BASE%
+echo        Example: 18,--ground-truth 33.800509,-117.220352
 echo.
 echo  ----------------------------------------------------------------
 echo   COMMON EXAMPLES
