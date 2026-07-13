@@ -230,6 +230,7 @@ echo        No arguments.
 echo.
 echo   [17] Opens http://localhost:8001/gnss_map.html in browser.
 echo        No arguments.
+echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
 echo.
 echo  ----------------------------------------------------------------
 echo   COMMON EXAMPLES
@@ -826,7 +827,14 @@ echo    Follow mode -- auto-pan to latest fix
 echo.
 echo  No args. Opens browser window automatically.
 pause & goto menu
-
+:show_help_18
+echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
+echo        --log PATH         specific gnss_*.jsonl.gz to analyze
+echo        --all-logs         process all logs in output directory
+echo        --ground-truth LAT,LON  static receiver position
+echo        --out DIR          log directory
+echo        Default: latest gnss log in %BASE%
+echo        Example: 18,--ground-truth 33.800509,-117.220352
 :end_help_check
 :: ── Resume normal parsing flow ────────────────────────────────────────────────
 if /i "!RAW_INPUT!"=="Q" exit /b 0
