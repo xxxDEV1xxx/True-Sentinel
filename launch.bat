@@ -53,8 +53,10 @@ echo   [21] broadcast_map_server.py   AoA bearing map server       :8002
 echo   [22] Open broadcast_map.html   http://localhost:8002/
 echo.
 echo   WIFI / AoA
-echo   [23] wifi_sentinel.py   Dual-adapter WiFi MITM forensic scanner
-echo   [24] Open wifi_live     http://localhost:8000/sweep.html (wifi panel)
+echo   [23] wifi_sentinel.py   Dual-adapter WiFi MITM forensic scanner http://localhost:8000/sweep.html (wifi panel)
+echo.
+echo   SENTINEL FULL AUTO
+echo   [24] ctw_sentinel_auto.py  Autonomous 24-layer incident engine
 echo.
 echo   PRESETS
 echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
@@ -208,6 +210,54 @@ echo        Accepts POST /aoa for manual AoA bearing entries.
 echo.
 echo   [22] Opens http://localhost:8002/ (broadcast AoA map)
 echo.
+:show_help_24
+cls
+echo  [24] ctw_sentinel_auto.py — AUTONOMOUS SENTINEL
+echo  ----------------------------------------------------------------
+echo  Launches all 23 tools, tails all 9 live feeds simultaneously,
+echo  correlates events across unified ClockAnchor timeline, and
+echo  raises confirmed multi-layer incidents with SHA-256 evidence
+echo  packages.
+echo.
+echo    --lat LAT              Observer latitude  (default 33.800509)
+echo    --lon LON              Observer longitude (default -117.220352)
+echo    --iface1 NAME          Primary WiFi adapter
+echo    --iface2 NAME          Secondary WiFi adapter
+echo    --home-ssid SSID       Legitimate network SSID
+echo    --home-bssid MAC       Legitimate AP BSSID
+echo    --home-channel N       Home channel number
+echo    --home-rssi DBM        Expected home AP signal dBm
+echo    --at-port PORT         Modem AT port (COM8 / localhost:5555)
+echo    --compass-port H:P     compass_bridge.py host:port
+echo    --mmwave-port COMx     HLK-LD6002B serial port
+echo    --room-x/y/z CM        Room dimensions cm
+echo    --mount-x/y CM         Sensor mount position cm
+echo    --out DIR              Output directory (default C:\sdr\logs)
+echo    --no-launch            Attach to already-running session
+echo                           (tailer-only mode, no child processes)
+echo.
+echo  INCIDENT TIERS:
+echo    TIER 1  3+ layers corroborate — Daubert evidence package
+echo    TIER 2  2 layers corroborate  — elevated monitoring
+echo    TIER 3  single layer anomaly  — watch triggered
+echo.
+echo  OUTPUTS:
+echo    sentinel_auto_STAMP.jsonl.gz   full forensic log
+echo    runtime/sentinel_live.jsonl    SSE mirror
+echo    incidents/INC-*.json           per-incident evidence packages
+echo    sentinel_report_STAMP.txt      human-readable report
+echo.
+echo  STANDARD RUN:
+echo    24,--home-ssid "YourSSID" --home-bssid AA:BB:CC:DD:EE:FF
+echo       --home-channel 9 --home-rssi -55
+echo       --iface1 "Wi-Fi" --iface2 "Wi-Fi 2"
+echo       --at-port COM8 --mmwave-port COM5
+echo       --room-x 365 --room-y 420 --room-z 265
+echo.
+echo  ATTACH TO RUNNING SESSION (no relaunch):
+echo    24,--no-launch
+echo.
+pause & goto menu
 echo  ----------------------------------------------------------------
 echo   COMMON EXAMPLES
 echo.
@@ -535,7 +585,47 @@ echo                   measured AoA / delta / power / timestamp
 echo    Live GNSS observer position (blue dot, auto-updates)
 echo    Tile switcher: Street / Satellite / Dark
 pause & goto menu
+:show_help_22
+cls
+echo  [23] wifi_sentinel.py
+echo    
+echo    First run sequence:
+echo    # Step 1 — find your adapter names
+echo    23,--list-adapters
 
+echo    # Step 2 — basic run, Layer 1 only, no monitor mode needed
+echo    23,--iface1 "Wi-Fi" --iface2 "Wi-Fi 2"
+echo       --home-ssid "YourSSID"
+echo       --home-bssid AA:BB:CC:DD:EE:FF
+echo       --home-channel 9
+echo       --home-rssi -55
+echo    
+echo    # Step 3 — with Layer 2 if monitor mode driver installed
+echo    23,--iface1 "Wi-Fi" --iface2 "Wi-Fi 2"
+echo       --home-ssid "YourSSID"
+echo       --home-bssid AA:BB:CC:DD:EE:FF
+echo       --home-channel 9
+echo       --home-rssi -55
+echo      --timing-window-ms 200
+echo       --deauth-threshold 5
+echo    The --home-rssi baseline is the most important parameter 
+echo    for the evil-twin RSSI elevation check — 
+echo    measure it once with your legitimate AP and put that value in. 
+echo    Any rogue AP physically co-located in the building will 
+echo    show a higher signal than your AP across the room.
+pause & goto menu
+cls
+echo  [24] ctw_sentinel_auto.py
+echo    
+echo    First run sequence:
+echo    Standard run command — single entry point for the entire platform:
+echo    24,--home-ssid "YourSSID" --home-bssid AA:BB:CC:DD:EE:FF --home-channel 9 --home-rssi -55 \
+echo    --iface1 "Wi-Fi" --iface2 "Wi-Fi 2" --at-port COM8 --mmwave-port COM5 \
+echo    --room-x 365 --room-y 420 --room-z 265
+echo    That single command starts every process, waits for them to settle, 
+echo    attaches tailers to all nine live feeds, and begins correlating. The first incident package will appear 
+echo    in C:\sdr\logs\incidents\ within seconds of the first multi-layer anomaly cluster.
+pause & goto menu
 :end_help_check
 
 :: ══════════════════════════════════════════════════════════════════════════════
@@ -954,7 +1044,28 @@ if "!RUN_22!"=="1" (
     start "" "http://localhost:8002/"
     echo [  OK] broadcast_map.html opened.
 )
-
+:: ── [23] wifi_sentinel.py ────────────────────────────────────────────────────
+if "!RUN_23!"=="1" (
+    if exist "%BASE%\wifi_sentinel.py" (
+        set "_A23=--out %BASE%"
+        if not "!ARGS_23!"=="" set "_A23=!ARGS_23!"
+        echo [CTW] [23] wifi_sentinel.py !_A23!
+        start "CTW-wifi" cmd /k "title CTW-wifi && %PYTHON% %BASE%\wifi_sentinel.py !_A23!"
+        timeout /t 2 /nobreak >nul
+        echo [  OK] wifi_sentinel.
+    ) else ( echo [WARN] wifi_sentinel.py not found. )
+)
+:: ── [24] ctw_sentinel_auto.py ────────────────────────────────────────────────
+if "!RUN_24!"=="1" (
+    if exist "%BASE%\ctw_sentinel_auto.py" (
+        set "_A24=--lat 33.800509 --lon -117.220352 --out %BASE%"
+        if not "!ARGS_24!"=="" set "_A24=!ARGS_24!"
+        echo [CTW] [24] ctw_sentinel_auto.py !_A24!
+        start "CTW-sentinel-auto" cmd /k "title CTW-sentinel-auto && %PYTHON% %BASE%\ctw_sentinel_auto.py !_A24!"
+        timeout /t 2 /nobreak >nul
+        echo [  OK] ctw_sentinel_auto.
+    ) else ( echo [WARN] ctw_sentinel_auto.py not found. )
+)
 :: ══════════════════════════════════════════════════════════════════════════════
 :: STATUS BOARD
 :: ══════════════════════════════════════════════════════════════════════════════
