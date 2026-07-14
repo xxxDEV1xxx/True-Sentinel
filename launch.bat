@@ -255,6 +255,20 @@ echo        Default: latest session pair in %BASE%
 echo        Example: 19,--baseline-dr 0.02
 echo        Example: 19,--all-sessions --baseline-dr 0.02
 echo.
+echo   [20] broadcast_monitor.py  Licensed AM/FM carrier power monitor
+echo        --lat LAT            Observer latitude (required)
+echo        --lon LON            Observer longitude (required)
+echo        --radius-km KM       Station search radius (default 150)
+echo        --bands AM FM        Bands to monitor (default: FM AM)
+echo        --dwell-ms MS        Dwell per window ms (default 200)
+echo        --anomaly-db DB      Deviation to flag (default 8)
+echo        --gain DB            SDR gain (default 40)
+echo        --use-cache PATH     Load station DB from cache file
+echo        --no-fcc             Skip FCC fetch (cache required)
+echo        NOTE: Power level only. No content captured or stored.
+echo        Example: 20,--lat 33.800509 --lon -117.220352
+echo        Example: 20,--lat 33.800509 --lon -117.220352 --bands FM
+echo.
 echo  ----------------------------------------------------------------
 echo   COMMON EXAMPLES
 echo.
@@ -851,6 +865,7 @@ echo.
 echo  No args. Opens browser window automatically.
 pause & goto menu
 :show_help_18
+cls
 echo   [18] gnss_anomaly_report.py  GNSS forensic anomaly detection report
 echo        --log PATH         specific gnss_*.jsonl.gz to analyze
 echo        --all-logs         process all logs in output directory
@@ -858,6 +873,38 @@ echo        --ground-truth LAT,LON  static receiver position
 echo        --out DIR          log directory
 echo        Default: latest gnss log in %BASE%
 echo        Example: 18,--ground-truth 33.800509,-117.220352
+pause & goto menu
+:show_help_19
+cls
+echo   [19] geiger_sdr_correlator.py  Post-session Geiger/SDR correlation
+echo        --sdr-log FILE [FILE]     sweep_*.jsonl.gz file(s)
+echo        --serial-log FILE [FILE]  serial_*.jsonl.gz file(s)
+echo        --audio-log FILE [FILE]   audio_*.jsonl.gz file(s)
+echo        --all-sessions            process all matched sessions
+echo        --baseline-dr USVH        known baseline dose rate
+echo        --window SEC              analysis window seconds (default 30)
+echo        --lag-max SEC             max correlation lag (default 0.5)
+echo        --out DIR                 log directory
+echo        Default: latest session pair in %BASE%
+echo        Example: 19,--baseline-dr 0.02
+echo        Example: 19,--all-sessions --baseline-dr 0.02
+pause & goto menu
+:show_help_20
+cls
+echo   [20] broadcast_monitor.py  Licensed AM/FM carrier power monitor
+echo        --lat LAT            Observer latitude (required)
+echo        --lon LON            Observer longitude (required)
+echo        --radius-km KM       Station search radius (default 150)
+echo        --bands AM FM        Bands to monitor (default: FM AM)
+echo        --dwell-ms MS        Dwell per window ms (default 200)
+echo        --anomaly-db DB      Deviation to flag (default 8)
+echo        --gain DB            SDR gain (default 40)
+echo        --use-cache PATH     Load station DB from cache file
+echo        --no-fcc             Skip FCC fetch (cache required)
+echo        NOTE: Power level only. No content captured or stored.
+echo        Example: 20,--lat 33.800509 --lon -117.220352
+echo        Example: 20,--lat 33.800509 --lon -117.220352 --bands FM
+pause & goto menu
 :end_help_check
 :: ── Resume normal parsing flow ────────────────────────────────────────────────
 if /i "!RAW_INPUT!"=="Q" exit /b 0
@@ -970,6 +1017,7 @@ taskkill /FI "WINDOWTITLE eq CTW-css"         /T /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq CTW-css-idle"    /T /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq CTW-mmwave"      /T /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq CTW-mmwave-cal"  /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq CTW-bcast" /T /F >nul 2>&1
 timeout /t 1 /nobreak >nul
 echo [  OK] Cleared.
 
