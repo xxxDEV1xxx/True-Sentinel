@@ -52,6 +52,10 @@ echo   [20] broadcast_monitor.py      Licensed AM/FM carrier power monitor
 echo   [21] broadcast_map_server.py   AoA bearing map server       :8002
 echo   [22] Open broadcast_map.html   http://localhost:8002/
 echo.
+echo   WIFI / AoA
+echo   [23] wifi_sentinel.py   Dual-adapter WiFi MITM forensic scanner
+echo   [24] Open wifi_live     http://localhost:8000/sweep.html (wifi panel)
+echo.
 echo   PRESETS
 echo   [A]  FULL               All infrastructure + sweep + GNSS + mmwave scan
 echo   [B]  CORE + SWEEP       Infrastructure + 386MHz sweep
